@@ -399,7 +399,7 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
                 </div>
             </div>
 
-            <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700 mb-8">
+            <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700 mb-8 relative z-50">
                 <h2 className="font-display text-2xl text-brand-text dark:text-rose-100 mb-4">Informações Gerais</h2>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="md:col-span-2">
@@ -420,7 +420,7 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
             </div>
 
             {/* Ingredients Sections */}
-            <div className="space-y-6 mb-8">
+            <div className="space-y-6 mb-8 relative z-40">
               {recipe.ingredientSections.map(section => (
                 <div key={section.id} className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700">
                     <div className="flex justify-between items-center mb-4 gap-4">
@@ -475,7 +475,7 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
               </button>
             </div>
 
-            <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700 mb-8">
+            <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700 mb-8 relative z-30">
                 <div className="flex justify-between items-center mb-4">
                     <h2 className="font-display text-2xl text-brand-text dark:text-rose-100">Embalagens</h2>
                     <button type="button" onClick={addPackaging} disabled={packagingItems.length === 0} className="flex items-center justify-center gap-2 bg-brand-secondary hover:bg-pink-500 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105 disabled:bg-gray-400 disabled:cursor-not-allowed">
@@ -504,7 +504,7 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8 relative z-20">
                 <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700 space-y-4">
                     <h2 className="font-display text-2xl text-brand-text dark:text-rose-100">Custos e Preço</h2>
                      <TimeInput 
@@ -553,7 +553,7 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 relative z-10">
                 <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700 space-y-4">
                     <h2 className="font-display text-2xl text-brand-text dark:text-rose-100">Modo de Preparo</h2>
                     <div className="space-y-2">
