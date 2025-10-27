@@ -186,6 +186,8 @@ const App: React.FC = () => {
   };
 
   const handleSaveIngredient = (ingredient: Ingredient) => {
+    const wasEditing = !!ingredientToEdit;
+
     setIngredients(prev => {
       const exists = prev.some(i => i.id === ingredient.id);
       if (exists) {
@@ -193,8 +195,14 @@ const App: React.FC = () => {
       }
       return [...prev, ingredient];
     });
-    setPage('ingredients');
     setIngredientToEdit(null);
+
+    if (wasEditing) {
+      setIngredientToView(ingredient);
+      setPage('ingredient-details');
+    } else {
+      setPage('ingredients');
+    }
   };
   
   const handleCancelIngredientForm = () => {
@@ -206,6 +214,47 @@ const App: React.FC = () => {
     setIngredients(prev => prev.filter(i => i.id !== ingredientId));
     setPage('ingredients');
     setIngredientToView(null);
+  };
+
+  const handleDeletePurchase = (ingredientId: string, purchaseId: string) => {
+    setIngredients(prevIngredients => {
+      const ingredientIndex = prevIngredients.findIndex(i => i.id === ingredientId);
+      if (ingredientIndex === -1) return prevIngredients;
+
+      const newIngredients = [...prevIngredients];
+      // Deep copy ingredient to avoid mutation issues
+      const ingredient = JSON.parse(JSON.stringify(newIngredients[ingredientIndex]));
+
+      const initialHistoryLength = ingredient.history.length;
+      ingredient.history = ingredient.history.filter((p: any) => p.id !== purchaseId);
+
+      if (ingredient.history.length === initialHistoryLength) {
+          return prevIngredients; // No change
+      }
+
+      if (ingredient.history.length === 0) {
+          ingredient.packagePrice = 0;
+          ingredient.packageAmount = 0;
+          ingredient.purchaseDate = undefined;
+          ingredient.supplier = undefined;
+      } else {
+          ingredient.history.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          const latestPurchase = ingredient.history[0];
+          ingredient.packagePrice = latestPurchase.packagePrice;
+          ingredient.packageAmount = latestPurchase.packageAmount;
+          ingredient.unit = latestPurchase.unit;
+          ingredient.purchaseDate = latestPurchase.date;
+          ingredient.supplier = latestPurchase.supplier;
+      }
+      
+      newIngredients[ingredientIndex] = ingredient;
+      
+      if (ingredientToView?.id === ingredientId) {
+          setIngredientToView(ingredient);
+      }
+
+      return newIngredients;
+    });
   };
 
   const handleAddNewPackaging = () => {
@@ -318,6 +367,7 @@ const App: React.FC = () => {
           ingredient={ingredientToView}
           onEdit={handleEditIngredient}
           onDelete={handleDeleteIngredient}
+          onDeletePurchase={handleDeletePurchase}
           onClose={() => setPage('ingredients')}
         /> : null;
       default:

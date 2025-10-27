@@ -5,8 +5,8 @@ import { PlusIcon } from './icons/PlusIcon';
 type IngredientFormData = {
   name: string;
   supplier: string;
-  packagePrice: number;
-  packageAmount: number;
+  packagePrice: string;
+  packageAmount: string;
   unit: Unit;
   purchaseDate: string;
 }
@@ -21,8 +21,8 @@ const getTodaysDateString = () => {
 
 const emptyPurchaseData: Omit<IngredientFormData, 'name'> = {
   supplier: '',
-  packagePrice: 0,
-  packageAmount: 0,
+  packagePrice: '',
+  packageAmount: '',
   unit: 'g',
   purchaseDate: getTodaysDateString(),
 };
@@ -44,8 +44,8 @@ export const IngredientForm: React.FC<IngredientFormProps> = ({ onSave, onCancel
             setFormData({
                 name: ingredientToEdit.name,
                 supplier: '', // Reset for new purchase
-                packagePrice: 0, // Reset for new purchase
-                packageAmount: 0, // Reset for new purchase
+                packagePrice: '', // Reset for new purchase
+                packageAmount: '', // Reset for new purchase
                 unit: ingredientToEdit.unit, // Default to last unit
                 purchaseDate: getTodaysDateString(),
             });
@@ -56,13 +56,20 @@ export const IngredientForm: React.FC<IngredientFormProps> = ({ onSave, onCancel
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
-        const isNumber = ['packagePrice', 'packageAmount'].includes(name);
-        setFormData(prev => ({ ...prev, [name]: isNumber ? parseFloat(value) || 0 : value }));
+        if ((name === 'packagePrice' || name === 'packageAmount') && value) {
+            if (!/^\d*([.,]\d*)?$/.test(value)) {
+                return;
+            }
+        }
+        setFormData(prev => ({ ...prev, [name]: value }));
     };
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!formData.name || !formData.purchaseDate || formData.packagePrice <= 0 || formData.packageAmount <= 0) {
+        const packagePrice = parseFloat(formData.packagePrice.replace(',', '.')) || 0;
+        const packageAmount = parseFloat(formData.packageAmount.replace(',', '.')) || 0;
+
+        if (!formData.name || !formData.purchaseDate || packagePrice <= 0 || packageAmount <= 0) {
             alert("Por favor, preencha nome, data, preço e quantidade corretamente.");
             return;
         }
@@ -71,8 +78,8 @@ export const IngredientForm: React.FC<IngredientFormProps> = ({ onSave, onCancel
             id: new Date().toISOString() + Math.random(),
             date: formData.purchaseDate,
             supplier: formData.supplier,
-            packagePrice: formData.packagePrice,
-            packageAmount: formData.packageAmount,
+            packagePrice: packagePrice,
+            packageAmount: packageAmount,
             unit: formData.unit,
         };
 
@@ -157,12 +164,12 @@ export const IngredientForm: React.FC<IngredientFormProps> = ({ onSave, onCancel
                         <div className="lg:col-span-4 grid grid-cols-1 sm:grid-cols-3 gap-6">
                             <div>
                                 <label htmlFor="packagePrice" className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Preço Embalagem (R$)</label>
-                                <input type="number" name="packagePrice" id="packagePrice" value={formData.packagePrice || ''} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 dark:text-gray-200 border border-rose-200 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-secondary focus:border-brand-secondary" placeholder="5,00" step="0.01" min="0" required />
+                                <input type="text" inputMode="decimal" name="packagePrice" id="packagePrice" value={formData.packagePrice} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 dark:text-gray-200 border border-rose-200 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-secondary focus:border-brand-secondary" placeholder="5,00" required />
                             </div>
                             <div className="flex items-end gap-2">
                                 <div className="flex-grow">
                                     <label htmlFor="packageAmount" className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Qtd. Embalagem</label>
-                                    <input type="number" name="packageAmount" id="packageAmount" value={formData.packageAmount || ''} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 dark:text-gray-200 border border-rose-200 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-secondary focus:border-brand-secondary" placeholder="1000" min="0" required />
+                                    <input type="text" inputMode="decimal" name="packageAmount" id="packageAmount" value={formData.packageAmount} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 dark:text-gray-200 border border-rose-200 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-secondary focus:border-brand-secondary" placeholder="1000" required />
                                 </div>
                                 <div>
                                     <label htmlFor="unit" className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Unid.</label>

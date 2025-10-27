@@ -5,11 +5,13 @@ import { PencilIcon } from './icons/PencilIcon';
 import { TrashIcon } from './icons/TrashIcon';
 import { getPricePerBaseUnit } from './costCalculator';
 import { formatCurrency } from './utils';
+import { ConfirmModal } from './ConfirmModal';
 
 interface IngredientDetailsProps {
   ingredient: Ingredient;
   onEdit: (ingredient: Ingredient) => void;
   onDelete: (ingredientId: string) => void;
+  onDeletePurchase: (ingredientId: string, purchaseId: string) => void;
   onClose: () => void;
 }
 
@@ -128,10 +130,12 @@ const LineChart: React.FC<{ data: { date: Date; price: number }[] }> = ({ data }
     );
 };
 
-export const IngredientDetails: React.FC<IngredientDetailsProps> = ({ ingredient, onEdit, onDelete, onClose }) => {
+export const IngredientDetails: React.FC<IngredientDetailsProps> = ({ ingredient, onEdit, onDelete, onClose, onDeletePurchase }) => {
     const [period, setPeriod] = useState<Period>('all');
+    const [purchaseToDelete, setPurchaseToDelete] = useState<Purchase | null>(null);
 
     const sortedHistory = useMemo(() => {
+        if (!ingredient.history) return [];
         return [...ingredient.history].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }, [ingredient.history]);
 
@@ -198,8 +202,16 @@ export const IngredientDetails: React.FC<IngredientDetailsProps> = ({ ingredient
             </div>
         );
     }
+
+    const confirmPurchaseDelete = () => {
+      if (purchaseToDelete) {
+        onDeletePurchase(ingredient.id, purchaseToDelete.id);
+        setPurchaseToDelete(null);
+      }
+    };
     
   return (
+    <>
     <div className="animate-fade-in space-y-8">
       <div className="flex justify-between items-center flex-wrap gap-4">
         <h1 className="font-display text-4xl text-brand-text dark:text-rose-100">{ingredient.name}</h1>
@@ -271,6 +283,7 @@ export const IngredientDetails: React.FC<IngredientDetailsProps> = ({ ingredient
                             <th className="p-2 text-sm font-semibold text-brand-light-text dark:text-gray-400 text-right">Quantidade</th>
                             <th className="p-2 text-sm font-semibold text-brand-light-text dark:text-gray-400 text-right">Valor</th>
                             <th className="p-2 text-sm font-semibold text-brand-light-text dark:text-gray-400 text-right">Preço / Un. Base</th>
+                            <th className="p-2 text-sm font-semibold text-brand-light-text dark:text-gray-400 text-right">Ações</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-rose-100 dark:divide-gray-700">
@@ -283,6 +296,15 @@ export const IngredientDetails: React.FC<IngredientDetailsProps> = ({ ingredient
                                     <td className="p-2 text-brand-text dark:text-gray-300 text-right font-mono">{purchase.packageAmount}{purchase.unit}</td>
                                     <td className="p-2 text-brand-text dark:text-gray-300 text-right font-mono">{formatCurrency(purchase.packagePrice)}</td>
                                     <td className="p-2 text-brand-text dark:text-gray-300 text-right font-mono">{formatCurrency(pricePerUnit)} / {baseUnitLabel}</td>
+                                    <td className="p-2 text-right">
+                                        <button 
+                                          onClick={() => setPurchaseToDelete(purchase)}
+                                          aria-label="Excluir compra" 
+                                          className="text-rose-400 hover:text-brand-primary dark:text-gray-400 dark:hover:text-rose-400 p-1 rounded-full hover:bg-rose-100 dark:hover:bg-gray-600 transition-colors"
+                                        >
+                                          <TrashIcon className="w-5 h-5" />
+                                        </button>
+                                    </td>
                                 </tr>
                             );
                         })}
@@ -294,5 +316,13 @@ export const IngredientDetails: React.FC<IngredientDetailsProps> = ({ ingredient
         </div>
       </div>
     </div>
+    <ConfirmModal
+        isOpen={!!purchaseToDelete}
+        title="Confirmar Exclusão"
+        message={`Tem certeza que deseja excluir esta compra de ${purchaseToDelete?.date ? new Date(purchaseToDelete.date).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : ''}? Esta ação não pode ser desfeita.`}
+        onConfirm={confirmPurchaseDelete}
+        onCancel={() => setPurchaseToDelete(null)}
+    />
+    </>
   );
 };
