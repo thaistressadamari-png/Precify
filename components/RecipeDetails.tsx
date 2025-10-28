@@ -107,6 +107,28 @@ export const RecipeDetails: React.FC<RecipeDetailsProps> = ({ recipe, ingredient
       return;
     }
     
+    // Create a temporary element to measure text width
+    const tempSpan = document.createElement('span');
+    tempSpan.style.fontFamily = 'Antonio, sans-serif';
+    tempSpan.style.fontSize = '21px';
+    tempSpan.style.fontWeight = '600';
+    tempSpan.style.whiteSpace = 'nowrap';
+    tempSpan.style.visibility = 'hidden';
+    tempSpan.style.position = 'absolute';
+    tempSpan.innerText = recipe.name.toUpperCase();
+    document.body.appendChild(tempSpan);
+    
+    const textWidth = tempSpan.getBoundingClientRect().width;
+    
+    document.body.removeChild(tempSpan);
+
+    // Calculate new height for the black bar, ensuring a minimum height
+    const barHeight = Math.max(181, textWidth + 40); // 181 is original height, +40 provides padding
+    const pathH = barHeight - (181 - 180.04);
+    const pathCurveControlY = pathH - (180.04 - 173.66);
+    const pathVerticalLineEndY = pathH - (180.04 - 165.78);
+
+    // Prepare HTML content for columns
     let ingredientesHtml = '';
     recipe.ingredientSections.forEach(section => {
       if (recipe.ingredientSections.length > 1 || section.name !== "Ingredientes") {
@@ -114,66 +136,99 @@ export const RecipeDetails: React.FC<RecipeDetailsProps> = ({ recipe, ingredient
       }
       section.ingredients.forEach(ing => {
         const ingData = ingredients.find(i => i.id === ing.ingredientId);
-        ingredientesHtml += `<div style="font-family: Inter, sans-serif; font-size: 12px; line-height: 1.5; word-wrap: break-word;">• ${ing.amount}${ing.unit} ${ingData ? ingData.name : 'Ingrediente Excluído'}</div>`;
+        ingredientesHtml += `<div>• ${ing.amount}${ing.unit} ${ingData ? ingData.name : 'Ingrediente Excluído'}</div>`;
       });
     });
 
-    const preparoHtml = recipe.preparationMethod?.map(step => 
-      `<div style="font-family: Inter, sans-serif; font-size: 12px; line-height: 1.5; margin-bottom: 4px; word-wrap: break-word;">• ${step}</div>`
-    ).join('') || '';
-
+    const preparoHtml = recipe.preparationMethod?.map(step => `<div>• ${step}</div>`).join('') || '';
     const observacoesTitle = recipe.observationsTitle || 'OBSERVAÇÕES';
     const observacoesListHtml = hasObservations 
-        ? recipe.observations!.map(obs => `<div style="font-family: Inter, sans-serif; font-size: 12px; line-height: 1.5; word-wrap: break-word;">• ${obs}</div>`).join('')
+        ? recipe.observations!.map(obs => `<div>• ${obs}</div>`).join('')
         : '';
+
+    // Measure content heights in a hidden element
+    const measureElement = document.createElement('div');
+    measureElement.style.position = 'absolute';
+    measureElement.style.visibility = 'hidden';
+    measureElement.style.left = '-9999px';
+    document.body.appendChild(measureElement);
+
+    const baseStyle = "font-family: Inter, sans-serif; font-size: 12px; line-height: 1.5; word-wrap: break-word;";
+    const titleStyle = "color: black; font-size: 18px; font-family: Antonio, sans-serif; font-weight: 600; word-wrap: break-word; margin-bottom: 10px;";
+
+    const ingredientsContainer = document.createElement('div');
+    ingredientsContainer.style.width = '180px';
+    ingredientsContainer.innerHTML = `<div style="${titleStyle}">INGREDIENTES</div><div style="${baseStyle}">${ingredientesHtml}</div>`;
+    measureElement.appendChild(ingredientsContainer);
+    const ingredientsHeight = ingredientsContainer.clientHeight;
+    
+    const preparoContainer = document.createElement('div');
+    preparoContainer.style.width = '190px';
+    preparoContainer.innerHTML = `<div style="${titleStyle}">MODO DE PREPARO</div><div style="${baseStyle}">${preparoHtml}</div>`;
+    measureElement.appendChild(preparoContainer);
+    const preparoHeight = preparoContainer.clientHeight;
+    
+    let observationsHeight = 0;
+    if (hasObservations) {
+        const obsContainer = document.createElement('div');
+        obsContainer.style.width = '420px';
+        obsContainer.innerHTML = `<div style="text-align: center; ${titleStyle}">${observacoesTitle.toUpperCase()}</div><div style="text-align: left; ${baseStyle}">${observacoesListHtml}</div>`;
+        measureElement.appendChild(obsContainer);
+        observationsHeight = obsContainer.clientHeight;
+    }
+    
+    document.body.removeChild(measureElement);
+
+    // Calculate dynamic layout
+    const cardTop = 143.35;
+    const cardPadding = 25; // Consistent vertical padding
+    const contentTop = cardTop + cardPadding;
+
+    const mainContentHeight = Math.max(ingredientsHeight, preparoHeight);
+    const contentBottom = contentTop + mainContentHeight;
+    
+    const observationsTop = hasObservations ? contentBottom + cardPadding : contentBottom;
+    const finalContentBottom = observationsTop + (hasObservations ? observationsHeight : 0);
+    const cardBottom = finalContentBottom + cardPadding;
+    
+    const newCardHeight = cardBottom - cardTop;
+    const finalCardHeight = Math.max(401, newCardHeight);
 
     const element = document.createElement('div');
     element.innerHTML = `
       <div style="width: 595.28px; height: 841.89px; position: relative; overflow: hidden; background-color: #E1E1E1;">
-        <!-- Static Background -->
         <div style="position: absolute; left: 0px; top: -0.27px;">
-          <svg width="596" height="842" viewBox="0 0 596 842" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M595.28 -0.269989H0V841.89H595.28V-0.269989Z" fill="#E1E1E1"/>
-          </svg>
+          <svg width="596" height="842" viewBox="0 0 596 842" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M595.28 -0.269989H0V841.89H595.28V-0.269989Z" fill="#E1E1E1"/></svg>
         </div>
-        <div style="position: absolute; left: 139px; top: 22px; color: black; font-size: 68px; font-family: Antonio, sans-serif; font-weight: 100; word-wrap: break-word;">FICHA TÉCNICA</div>
-        
-        <!-- White Card -->
-        <div style="position: absolute; left: 51.97px; top: 143.35px;">
-          <svg width="492" height="401" viewBox="0 0 492 401" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M457.56 400.45H33.77C15.12 400.45 0 385.33 0 366.68V33.77C0 15.12 15.12 0 33.77 0H457.56C476.21 0 491.33 15.12 491.33 33.77V366.69C491.33 385.34 476.21 400.45 457.56 400.45Z" fill="white"/>
-          </svg>
+        <div style="position: absolute; left: 139px; top: 22px; color: black; font-size: 68px; font-family: Antonio, sans-serif; word-wrap: break-word;">
+          <span style="font-weight: 100;">FICHA</span> <span style="font-weight: 300;">TÉCNICA</span>
         </div>
         
-        <!-- Black Bar -->
+        <div style="position: absolute; left: 51.97px; top: ${cardTop}px; width: 491.33px; height: ${finalCardHeight}px; background: white; border-radius: 33.77px;"></div>
+        
         <div style="position: absolute; left: 43px; top: 142px;">
-          <svg width="52" height="181" viewBox="0 0 52 181" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M37.28 180.04H14.26C6.38 180.04 0 173.66 0 165.78V14.26C0 6.38001 6.38 0 14.26 0H37.28C45.16 0 51.54 6.38001 51.54 14.26V165.78C51.54 173.65 45.15 180.04 37.28 180.04Z" fill="black"/>
+          <svg width="52" height="${barHeight}" viewBox="0 0 52 ${barHeight}" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M37.28 ${pathH}H14.26C6.38 ${pathH} 0 ${pathCurveControlY} 0 ${pathVerticalLineEndY}V14.26C0 6.38001 6.38 0 14.26 0H37.28C45.16 0 51.54 6.38001 51.54 14.26V${pathVerticalLineEndY}C51.54 ${pathCurveControlY} 45.15 ${pathH} 37.28 ${pathH}Z" fill="black"/>
           </svg>
         </div>
         
-        <!-- Container for rotated title -->
-        <div style="position: absolute; left: 43px; top: 142px; width: 52px; height: 181px; display: flex; align-items: center; justify-content: center; overflow: hidden;">
+        <div style="position: absolute; left: 43px; top: 142px; width: 52px; height: ${barHeight}px; display: flex; align-items: center; justify-content: center; overflow: hidden;">
           <div style="transform: rotate(-90deg); color: white; font-size: 21px; font-family: Antonio, sans-serif; font-weight: 600; white-space: nowrap; text-align: center;">${recipe.name.toUpperCase()}</div>
         </div>
         
-        <!-- Dynamic Content Columns -->
-        <div style="position: absolute; left: 123px; top: 181px; width: 180px; max-height: 230px; overflow: hidden;">
-            <div style="color: black; font-size: 18px; font-family: Antonio, sans-serif; font-weight: 600; word-wrap: break-word; margin-bottom: 10px;">INGREDIENTES</div>
-            ${ingredientesHtml}
+        <div style="position: absolute; left: 123px; top: ${contentTop}px; width: 180px;">
+            <div style="${titleStyle}">INGREDIENTES</div>
+            <div style="${baseStyle}">${ingredientesHtml}</div>
         </div>
-        <div style="position: absolute; left: 321px; top: 181px; width: 190px; max-height: 230px; overflow: hidden;">
-            <div style="color: black; font-size: 18px; font-family: Antonio, sans-serif; font-weight: 600; word-wrap: break-word; margin-bottom: 10px;">MODO DE PREPARO</div>
-            ${preparoHtml}
+        <div style="position: absolute; left: 321px; top: ${contentTop}px; width: 190px;">
+            <div style="${titleStyle}">MODO DE PREPARO</div>
+            <div style="${baseStyle}">${preparoHtml}</div>
         </div>
         
-        <!-- Dynamic Observations -->
         ${hasObservations ? `
-            <div style="position: absolute; left: 104px; top: 431px; width: 420px; text-align: center;">
-                <div style="color: black; font-size: 18px; font-family: Antonio, sans-serif; font-weight: 600; word-wrap: break-word; margin-bottom: 10px;">${observacoesTitle.toUpperCase()}</div>
-            </div>
-            <div style="position: absolute; left: 104px; top: 469px; width: 420px; max-height: 50px; overflow: hidden;">
-                ${observacoesListHtml}
+            <div style="position: absolute; left: 104px; top: ${observationsTop}px; width: 420px;">
+                <div style="text-align: center; ${titleStyle}">${observacoesTitle.toUpperCase()}</div>
+                <div style="text-align: left; ${baseStyle}">${observacoesListHtml}</div>
             </div>
         ` : ''}
       </div>`;

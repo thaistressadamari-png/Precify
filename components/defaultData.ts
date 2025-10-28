@@ -592,10 +592,44 @@ export const defaultIngredients: Ingredient[] = [
         "unit": "kg"
       }
     ]
+  },
+  {
+    "id": "ing-acucar-refinado-1",
+    "name": "Açúcar Refinado União",
+    "unit": "kg",
+    "supplier": "Inova",
+    "packagePrice": 4.89,
+    "packageAmount": 1,
+    "purchaseDate": "2025-10-21",
+    "history": [
+      {
+        "id": "ing-acucar-refinado-1-0",
+        "date": "2025-10-21",
+        "supplier": "Inova",
+        "packagePrice": 4.89,
+        "packageAmount": 1,
+        "unit": "kg"
+      }
+    ]
   }
 ];
 
-export const defaultPackaging: Packaging[] = [];
+export const defaultPackaging: Packaging[] = [
+  {
+    id: 'pkg-bolo-padrao-1',
+    name: 'Caixa para Bolo Padrão (25cm)',
+    price: 3.50,
+    amount: 1,
+    unit: 'un'
+  },
+  {
+    id: 'pkg-fatia-torta-1',
+    name: 'Embalagem para Fatia de Torta',
+    price: 15.00,
+    amount: 50,
+    unit: 'un'
+  }
+];
 
 export const defaultSettings: AppSettings = {
   laborCostPerHour: 20.00,
