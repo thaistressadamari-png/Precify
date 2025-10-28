@@ -93,8 +93,8 @@ export const RecipeDetails: React.FC<RecipeDetailsProps> = ({ recipe, ingredient
     return data.filter(item => item.value > 0).sort((a, b) => b.value - a.value);
   }, [costBreakdown]);
   
-  const hasPreparationMethod = recipe.preparationMethod && recipe.preparationMethod.length > 0;
-  const hasObservations = recipe.observations && recipe.observations.length > 0;
+  const hasPreparationMethod = recipe.preparationMethod && recipe.preparationMethod.some(step => step.trim() !== '');
+  const hasObservations = recipe.observations && recipe.observations.some(obs => obs.trim() !== '');
   
   const confirmDelete = () => {
     onDelete(recipe.id);
@@ -107,62 +107,79 @@ export const RecipeDetails: React.FC<RecipeDetailsProps> = ({ recipe, ingredient
       return;
     }
     
-    // --- GERAR CONTEÚDO HTML DINÂMICO ---
-    let ingredientesList = '';
+    let ingredientesHtml = '';
     recipe.ingredientSections.forEach(section => {
-      ingredientesList += `<li style="list-style-type: none; font-weight: bold; margin-top: 10px; margin-bottom: 5px; margin-left: -20px; text-transform: uppercase;">${section.name}</li>`;
+      if (recipe.ingredientSections.length > 1 || section.name !== "Ingredientes") {
+        ingredientesHtml += `<div style="font-family: Antonio, sans-serif; font-weight: 600; font-size: 14px; margin-top: 8px; margin-bottom: 4px;">${section.name}</div>`;
+      }
       section.ingredients.forEach(ing => {
         const ingData = ingredients.find(i => i.id === ing.ingredientId);
-        ingredientesList += `<li>${ing.amount}${ing.unit} de ${ingData ? ingData.name : 'ingrediente desconhecido'}</li>`;
+        ingredientesHtml += `<div style="font-family: Inter, sans-serif; font-size: 12px; line-height: 1.5; word-wrap: break-word;">• ${ing.amount}${ing.unit} ${ingData ? ingData.name : 'Ingrediente Excluído'}</div>`;
       });
     });
 
-    const preparoList = recipe.preparationMethod?.map(step => `<li>${step}</li>`).join('') || '<li>Nenhum passo adicionado.</li>';
-    const observacoesTitle = recipe.observationsTitle || 'Observações';
-    const observacoesList = recipe.observations?.map(obs => `<li>${obs}</li>`).join('') || '';
+    const preparoHtml = recipe.preparationMethod?.map(step => 
+      `<div style="font-family: Inter, sans-serif; font-size: 12px; line-height: 1.5; margin-bottom: 4px; word-wrap: break-word;">• ${step}</div>`
+    ).join('') || '';
 
-    // --- TEMPLATE HTML DO PDF ---
-    const htmlContent = `
-      <div id="ficha-tecnica" style="width: 210mm; height: 297mm; box-sizing: border-box; background-color: #E1E1E1; position: relative; font-family: 'Antonio', sans-serif; page-break-inside: avoid; padding: 1cm 0;">
-        <h1 style="position: absolute; top: 1.5cm; left: 50%; transform: translateX(-50%); font-weight: 400; font-size: 58pt; color: #000; margin: 0; text-align: center; white-space: nowrap;">FICHA TÉCNICA</h1>
-        <div style="position: absolute; top: 5.5cm; left: 1.2cm; background-color: #000; color: #FFF; font-weight: 700; font-size: 18pt; padding: 10px 25px; border-radius: 12px; z-index: 10; box-shadow: 2px 2px 6px rgba(0,0,0,0.25); white-space: nowrap; max-width: calc(100% - 2.4cm); overflow: hidden; text-overflow: ellipsis;">
-          ${recipe.name.toUpperCase()}
-        </div>
-        <div style="position: absolute; top: 6cm; left: 1.82cm; right: 1.82cm; background-color: #FFFFFF; border-radius: 20px; padding: 1.5cm; box-sizing: border-box; z-index: 1; padding-top: 2cm;">
-          <div style="display: flex; justify-content: space-between; gap: 1.5cm; width: 100%;">
-            <div style="width: 48%;">
-              <h3 style="font-weight: 700; font-size: 16pt; margin: 0 0 10px 0; border-bottom: 2px solid #E1E1E1; padding-bottom: 5px;">INGREDIENTES</h3>
-              <ul style="font-family: Arial, sans-serif; font-size: 11pt; color: #333; list-style-type: disc; margin: 0; padding-left: 20px;">
-                ${ingredientesList}
-              </ul>
-            </div>
-            <div style="width: 48%;">
-              <h3 style="font-weight: 700; font-size: 16pt; margin: 0 0 10px 0; border-bottom: 2px solid #E1E1E1; padding-bottom: 5px;">MODO DE PREPARO</h3>
-              <ul style="font-family: Arial, sans-serif; font-size: 11pt; color: #333; list-style-type: disc; margin: 0; padding-left: 20px; line-height: 1.4;">
-                ${preparoList}
-              </ul>
-            </div>
-          </div>
-          ${observacoesList ? `
-          <div style="margin-top: 1.5cm; display: flex; flex-direction: column; align-items: center;">
-            <h3 style="font-weight: 700; font-size: 16pt; margin: 0 0 8px 0; border-bottom: 2px solid #E1E1E1; padding-bottom: 5px;">
-              ${observacoesTitle.toUpperCase()}
-            </h3>
-            <ul style="font-family: Arial, sans-serif; font-size: 11pt; color: #333; list-style-type: disc; margin: 0; padding-left: 20px; line-height: 1.4; text-align: left; width: fit-content;">
-              ${observacoesList}
-            </ul>
-          </div>` : ''}
-        </div>
-      </div>`;
+    const observacoesTitle = recipe.observationsTitle || 'OBSERVAÇÕES';
+    const observacoesListHtml = hasObservations 
+        ? recipe.observations!.map(obs => `<div style="font-family: Inter, sans-serif; font-size: 12px; line-height: 1.5; word-wrap: break-word;">• ${obs}</div>`).join('')
+        : '';
 
-    // --- RENDERIZAR E SALVAR PDF ---
     const element = document.createElement('div');
-    element.innerHTML = htmlContent;
-    element.style.position = 'fixed';
-    element.style.left = '-9999px'; // Mantém o elemento fora da tela
-    document.body.appendChild(element);
+    element.innerHTML = `
+      <div style="width: 595.28px; height: 841.89px; position: relative; overflow: hidden; background-color: #E1E1E1;">
+        <!-- Static Background -->
+        <div style="position: absolute; left: 0px; top: -0.27px;">
+          <svg width="596" height="842" viewBox="0 0 596 842" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M595.28 -0.269989H0V841.89H595.28V-0.269989Z" fill="#E1E1E1"/>
+          </svg>
+        </div>
+        <div style="position: absolute; left: 139px; top: 22px; color: black; font-size: 68px; font-family: Antonio, sans-serif; font-weight: 100; word-wrap: break-word;">FICHA TÉCNICA</div>
+        
+        <!-- White Card -->
+        <div style="position: absolute; left: 51.97px; top: 143.35px;">
+          <svg width="492" height="401" viewBox="0 0 492 401" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M457.56 400.45H33.77C15.12 400.45 0 385.33 0 366.68V33.77C0 15.12 15.12 0 33.77 0H457.56C476.21 0 491.33 15.12 491.33 33.77V366.69C491.33 385.34 476.21 400.45 457.56 400.45Z" fill="white"/>
+          </svg>
+        </div>
+        
+        <!-- Black Bar -->
+        <div style="position: absolute; left: 43px; top: 142px;">
+          <svg width="52" height="181" viewBox="0 0 52 181" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M37.28 180.04H14.26C6.38 180.04 0 173.66 0 165.78V14.26C0 6.38001 6.38 0 14.26 0H37.28C45.16 0 51.54 6.38001 51.54 14.26V165.78C51.54 173.65 45.15 180.04 37.28 180.04Z" fill="black"/>
+          </svg>
+        </div>
+        
+        <!-- Container for rotated title -->
+        <div style="position: absolute; left: 43px; top: 142px; width: 52px; height: 181px; display: flex; align-items: center; justify-content: center; overflow: hidden;">
+          <div style="transform: rotate(-90deg); color: white; font-size: 21px; font-family: Antonio, sans-serif; font-weight: 600; white-space: nowrap; text-align: center;">${recipe.name.toUpperCase()}</div>
+        </div>
+        
+        <!-- Dynamic Content Columns -->
+        <div style="position: absolute; left: 123px; top: 181px; width: 180px; max-height: 230px; overflow: hidden;">
+            <div style="color: black; font-size: 18px; font-family: Antonio, sans-serif; font-weight: 600; word-wrap: break-word; margin-bottom: 10px;">INGREDIENTES</div>
+            ${ingredientesHtml}
+        </div>
+        <div style="position: absolute; left: 321px; top: 181px; width: 190px; max-height: 230px; overflow: hidden;">
+            <div style="color: black; font-size: 18px; font-family: Antonio, sans-serif; font-weight: 600; word-wrap: break-word; margin-bottom: 10px;">MODO DE PREPARO</div>
+            ${preparoHtml}
+        </div>
+        
+        <!-- Dynamic Observations -->
+        ${hasObservations ? `
+            <div style="position: absolute; left: 104px; top: 431px; width: 420px; text-align: center;">
+                <div style="color: black; font-size: 18px; font-family: Antonio, sans-serif; font-weight: 600; word-wrap: break-word; margin-bottom: 10px;">${observacoesTitle.toUpperCase()}</div>
+            </div>
+            <div style="position: absolute; left: 104px; top: 469px; width: 420px; max-height: 50px; overflow: hidden;">
+                ${observacoesListHtml}
+            </div>
+        ` : ''}
+      </div>`;
+    
+    const pdfElement = element.firstElementChild as HTMLElement;
 
-    const pdfElement = element.querySelector('#ficha-tecnica');
     if (pdfElement) {
       const filename = `Ficha_Tecnica_${recipe.name.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
       const opt = {
@@ -170,23 +187,13 @@ export const RecipeDetails: React.FC<RecipeDetailsProps> = ({ recipe, ingredient
         filename: filename,
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { scale: 2, useCORS: true, letterRendering: true },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+        jsPDF: { unit: 'px', format: [595.28, 841.89], orientation: 'portrait' },
       };
       
-      window.html2pdf().from(pdfElement).set(opt).save()
-        .then(() => {
-            document.body.removeChild(element);
-        })
-        .catch((err: Error) => {
-            console.error("Erro ao gerar o PDF:", err);
-            alert("Ocorreu um erro ao tentar gerar o PDF.");
-            document.body.removeChild(element);
-        });
-    } else {
-      document.body.removeChild(element);
+      window.html2pdf().from(pdfElement).set(opt).save();
     }
   };
+
 
   return (
     <>
