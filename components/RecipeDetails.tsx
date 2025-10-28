@@ -197,7 +197,7 @@ export const RecipeDetails: React.FC<RecipeDetailsProps> = ({ recipe, ingredient
     const element = document.createElement('div');
     element.innerHTML = `
       <div style="width: 595.28px; height: 841.89px; position: relative; overflow: hidden; background-color: #E1E1E1;">
-        <div style="position: absolute; left: 0px; top: -0.27px;">
+        <div style="position: absolute; left: -10px; top: -0.27px;">
           <svg width="596" height="842" viewBox="0 0 596 842" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M595.28 -0.269989H0V841.89H595.28V-0.269989Z" fill="#E1E1E1"/></svg>
         </div>
         <div style="position: absolute; left: 139px; top: 22px; color: black; font-size: 68px; font-family: Antonio, sans-serif; word-wrap: break-word;">
