@@ -428,17 +428,17 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
                   className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700 relative" 
                   style={{ zIndex: recipe.ingredientSections.length - index }}
                 >
-                    <div className="flex justify-between items-center mb-4 gap-4">
+                    <div className="flex flex-wrap justify-between items-center mb-4 gap-4">
                         <input 
                           type="text"
                           value={section.name}
                           onChange={(e) => updateSectionName(section.id, e.target.value)}
-                          className="font-display text-2xl text-brand-text dark:text-rose-100 bg-transparent border-b-2 border-transparent focus:border-brand-secondary focus:outline-none transition-colors"
+                          className="font-display text-2xl text-brand-text dark:text-rose-100 bg-transparent border-b-2 border-transparent focus:border-brand-secondary focus:outline-none transition-colors flex-grow min-w-0"
                           placeholder="Nome da Seção"
                         />
                         <div className="flex items-center gap-2">
                            <button type="button" onClick={() => addIngredient(section.id)} disabled={ingredients.length === 0} className="flex items-center justify-center gap-2 bg-brand-secondary hover:bg-pink-500 text-white font-bold py-2 px-3 rounded-lg shadow-md transition-transform transform hover:scale-105 disabled:bg-gray-400 disabled:cursor-not-allowed text-sm">
-                                <PlusIcon className="w-4 h-4"/> <span>Ingrediente</span>
+                                <PlusIcon className="w-4 h-4"/> <span className="hidden sm:inline">Ingrediente</span>
                             </button>
                             <button type="button" onClick={() => triggerRemoveSection(section)} className="text-rose-400 hover:text-brand-primary p-2 rounded-full hover:bg-rose-100 dark:hover:bg-gray-600 disabled:opacity-50" disabled={recipe.ingredientSections.length <= 1}>
                                 <TrashIcon className="w-5 h-5" />
@@ -484,7 +484,7 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
                 <div className="flex justify-between items-center mb-4">
                     <h2 className="font-display text-2xl text-brand-text dark:text-rose-100">Embalagens</h2>
                     <button type="button" onClick={addPackaging} disabled={packagingItems.length === 0} className="flex items-center justify-center gap-2 bg-brand-secondary hover:bg-pink-500 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105 disabled:bg-gray-400 disabled:cursor-not-allowed">
-                        <PlusIcon className="w-5 h-5"/> <span>Adicionar</span>
+                        <PlusIcon className="w-5 h-5"/> <span className="hidden sm:inline">Adicionar</span>
                     </button>
                 </div>
                 <div className="space-y-2">

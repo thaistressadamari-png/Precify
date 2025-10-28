@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState } from 'react';
 import type { Ingredient, Purchase } from '../types';
 import { ArrowLeftIcon } from './icons/ArrowLeftIcon';
@@ -20,9 +21,9 @@ type Period = '30d' | '6m' | '1y' | 'all';
 const LineChart: React.FC<{ data: { date: Date; price: number }[] }> = ({ data }) => {
     const [tooltip, setTooltip] = useState<{ x: number; y: number; date: string; price: string } | null>(null);
 
-    const width = 500;
-    const height = 250;
-    const margin = { top: 30, right: 20, bottom: 40, left: 60 };
+    const width = 400;
+    const height = 220;
+    const margin = { top: 20, right: 15, bottom: 30, left: 45 };
     const innerWidth = width - margin.left - margin.right;
     const innerHeight = height - margin.top - margin.bottom;
     
@@ -62,7 +63,7 @@ const LineChart: React.FC<{ data: { date: Date; price: number }[] }> = ({ data }
 
     return (
     <div className="relative">
-      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto -ml-2">
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto">
         <g>
             {/* Y Axis Grid Lines & Labels */}
             {yGridLines.map((tick, i) => (
@@ -79,11 +80,11 @@ const LineChart: React.FC<{ data: { date: Date; price: number }[] }> = ({ data }
             {data.length > 0 && (
                 <g className="text-gray-400">
                     <text x={margin.left} y={height - margin.bottom + 15} textAnchor="start" alignmentBaseline="middle" className="text-xs fill-current">
-                        {minDate.toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit', year: 'numeric'})}
+                        {minDate.toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit', year: '2-digit'})}
                     </text>
                     {maxDate.getTime() !== minDate.getTime() &&
                         <text x={width - margin.right} y={height - margin.bottom + 15} textAnchor="end" alignmentBaseline="middle" className="text-xs fill-current">
-                            {maxDate.toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit', year: 'numeric'})}
+                            {maxDate.toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit', year: '2-digit'})}
                         </text>
                     }
                 </g>

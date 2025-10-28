@@ -400,7 +400,7 @@ const App: React.FC = () => {
       className={`flex flex-col md:flex-row items-center justify-center md:justify-start gap-2 md:gap-3 px-3 py-2 rounded-lg text-sm md:text-base font-medium transition-colors w-full text-left ${activePage === targetPage ? 'bg-brand-primary text-white' : 'text-brand-light-text dark:text-gray-400 hover:bg-rose-100 dark:hover:bg-gray-700'}`}
     >
       <Icon className="w-6 h-6"/>
-      <span className="hidden md:inline">{label}</span>
+      <span className={`${activePage === targetPage ? 'inline text-xs' : 'hidden'} md:inline md:text-base`}>{label}</span>
     </button>
   );
 
