@@ -1,4 +1,5 @@
 
+
 import React, { useMemo, useState } from 'react';
 import type { Ingredient, Purchase } from '../types';
 import { ArrowLeftIcon } from './icons/ArrowLeftIcon';
@@ -102,8 +103,8 @@ const LineChart: React.FC<{ data: { date: Date; price: number }[] }> = ({ data }
                   r="5" 
                   className="fill-current text-brand-primary cursor-pointer stroke-2 stroke-white dark:stroke-gray-800"
                   onMouseEnter={() => setTooltip({
-                      x: xScale(d.date),
-                      y: yScale(d.price),
+                      x: (xScale(d.date) / width) * 100,
+                      y: (yScale(d.price) / height) * 100,
                       date: d.date.toLocaleDateString('pt-BR'),
                       price: formatCurrency(d.price)
                   })}
@@ -122,7 +123,7 @@ const LineChart: React.FC<{ data: { date: Date; price: number }[] }> = ({ data }
         </g>
       </svg>
       {tooltip && (
-        <div className="absolute p-2 text-xs text-white bg-gray-800 rounded-md shadow-lg pointer-events-none" style={{ left: tooltip.x, top: tooltip.y, transform: `translate(-50%, -120%)` }}>
+        <div className="absolute p-2 text-xs text-white bg-gray-800 rounded-md shadow-lg pointer-events-none" style={{ left: `${tooltip.x}%`, top: `${tooltip.y}%`, transform: `translate(-50%, -120%)` }}>
             <div>{tooltip.date}</div>
             <div className="font-bold">{tooltip.price}</div>
         </div>
