@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import type { Ingredient, Packaging, Recipe, RecipeIngredient, RecipePackaging, Unit, AppSettings, IngredientSection } from '../types';
 import { PlusIcon } from './icons/PlusIcon';
@@ -421,8 +422,12 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
 
             {/* Ingredients Sections */}
             <div className="space-y-6 mb-8 relative z-40">
-              {recipe.ingredientSections.map(section => (
-                <div key={section.id} className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700">
+              {recipe.ingredientSections.map((section, index) => (
+                <div 
+                  key={section.id} 
+                  className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700 relative" 
+                  style={{ zIndex: recipe.ingredientSections.length - index }}
+                >
                     <div className="flex justify-between items-center mb-4 gap-4">
                         <input 
                           type="text"
