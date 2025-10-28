@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState } from 'react';
 import type { Recipe, Ingredient, Packaging, AppSettings } from '../types';
 import { ArrowLeftIcon } from './icons/ArrowLeftIcon';
@@ -101,12 +102,15 @@ export const RecipeDetails: React.FC<RecipeDetailsProps> = ({ recipe, ingredient
     setShowDeleteConfirm(false);
   };
 
-  const handleGeneratePdf = () => {
+  const handleGeneratePdf = async () => {
     if (typeof window.html2pdf !== 'function') {
       alert("Erro: A biblioteca de geração de PDF não foi carregada. Tente recarregar a página.");
       return;
     }
     
+    // Garante que as fontes personalizadas foram carregadas antes de medir o texto
+    await document.fonts.ready;
+
     // Create a temporary element to measure text width
     const tempSpan = document.createElement('span');
     tempSpan.style.fontFamily = 'Antonio, sans-serif';
