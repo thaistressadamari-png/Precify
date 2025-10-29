@@ -69,6 +69,7 @@ const App: React.FC = () => {
   const [recipeToEdit, setRecipeToEdit] = useState<Recipe | null>(null);
   const [recipeToView, setRecipeToView] = useState<Recipe | null>(null);
   const [ingredientToEdit, setIngredientToEdit] = useState<Ingredient | null>(null);
+  const [ingredientFormMode, setIngredientFormMode] = useState<'create' | 'edit' | 'addPurchase'>('create');
   const [ingredientToView, setIngredientToView] = useState<Ingredient | null>(null);
   const [packagingToEdit, setPackagingToEdit] = useState<Packaging | null>(null);
   const [isDarkMode, setIsDarkMode] = useDarkMode();
@@ -167,16 +168,19 @@ const App: React.FC = () => {
 
   const handleAddNewIngredient = () => {
     setIngredientToEdit(null);
+    setIngredientFormMode('create');
     setPage('ingredient-form');
   };
 
   const handleEditIngredient = (ingredient: Ingredient) => {
     setIngredientToEdit(ingredient);
+    setIngredientFormMode('edit');
     setPage('ingredient-form');
   };
 
-  const handleGoToEditIngredient = (ingredient: Ingredient) => {
+  const handleStartAddPurchase = (ingredient: Ingredient) => {
     setIngredientToEdit(ingredient);
+    setIngredientFormMode('addPurchase');
     setPage('ingredient-form');
   };
   
@@ -197,7 +201,8 @@ const App: React.FC = () => {
     });
     setIngredientToEdit(null);
 
-    if (wasEditing) {
+    // After saving an edit, go to details. After creating, go to list.
+    if (wasEditing && ingredientFormMode === 'edit') {
       setIngredientToView(ingredient);
       setPage('ingredient-details');
     } else {
@@ -206,8 +211,16 @@ const App: React.FC = () => {
   };
   
   const handleCancelIngredientForm = () => {
+    const previousPage = ingredientToEdit ? 'ingredient-details' : 'ingredients';
+    const ingredientToKeepViewing = ingredientToEdit;
     setIngredientToEdit(null);
-    setPage('ingredients');
+    
+    if (previousPage === 'ingredient-details' && ingredientToKeepViewing) {
+      setIngredientToView(ingredientToKeepViewing);
+      setPage('ingredient-details');
+    } else {
+      setPage('ingredients');
+    }
   };
   
   const handleDeleteIngredient = (ingredientId: string) => {
@@ -298,7 +311,7 @@ const App: React.FC = () => {
           settings={settings} 
           setPage={setPage} 
           onGoToEdit={handleEditRecipe}
-          onGoToEditIngredient={handleGoToEditIngredient}
+          onGoToEditIngredient={handleStartAddPurchase}
         />;
       case 'ingredients':
         return <IngredientManager 
@@ -355,6 +368,7 @@ const App: React.FC = () => {
           onSave={handleSaveIngredient}
           onCancel={handleCancelIngredientForm}
           ingredientToEdit={ingredientToEdit}
+          mode={ingredientFormMode}
         />;
       case 'packaging-form':
         return <PackagingForm
@@ -365,7 +379,7 @@ const App: React.FC = () => {
       case 'ingredient-details':
         return ingredientToView ? <IngredientDetails 
           ingredient={ingredientToView}
-          onEdit={handleEditIngredient}
+          onEdit={handleStartAddPurchase}
           onDelete={handleDeleteIngredient}
           onDeletePurchase={handleDeletePurchase}
           onClose={() => setPage('ingredients')}

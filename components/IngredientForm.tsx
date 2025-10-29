@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { Ingredient, Purchase, Unit } from '../types';
 import { PlusIcon } from './icons/PlusIcon';
+import { PencilIcon } from './icons/PencilIcon';
 
 type IngredientFormData = {
   name: string;
@@ -31,33 +32,45 @@ interface IngredientFormProps {
     onSave: (ingredient: Ingredient) => void;
     onCancel: () => void;
     ingredientToEdit?: Ingredient | null;
+    mode: 'create' | 'edit' | 'addPurchase';
 }
 
-export const IngredientForm: React.FC<IngredientFormProps> = ({ onSave, onCancel, ingredientToEdit }) => {
+export const IngredientForm: React.FC<IngredientFormProps> = ({ onSave, onCancel, ingredientToEdit, mode }) => {
     const [formData, setFormData] = useState<IngredientFormData>({
         name: '',
         ...emptyPurchaseData
     });
     
     useEffect(() => {
-        if (ingredientToEdit) {
+        if (mode === 'edit' && ingredientToEdit) {
+            const latestPurchase = ingredientToEdit.history.length > 0
+                ? [...ingredientToEdit.history].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]
+                : null;
+            
             setFormData({
                 name: ingredientToEdit.name,
-                supplier: '', // Reset for new purchase
-                packagePrice: '', // Reset for new purchase
-                packageAmount: '', // Reset for new purchase
-                unit: ingredientToEdit.unit, // Default to last unit
-                purchaseDate: getTodaysDateString(),
+                supplier: latestPurchase?.supplier || '',
+                packagePrice: latestPurchase?.packagePrice.toString().replace('.', ',') || '',
+                packageAmount: latestPurchase?.packageAmount.toString().replace('.', ',') || '',
+                unit: latestPurchase?.unit || 'g',
+                purchaseDate: latestPurchase?.date || getTodaysDateString(),
             });
-        } else {
+        } else if (mode === 'addPurchase' && ingredientToEdit) {
+            setFormData({
+                name: ingredientToEdit.name,
+                ...emptyPurchaseData,
+                unit: ingredientToEdit.unit, // Default to last known unit
+            });
+        } else { // create mode
             setFormData({ name: '', ...emptyPurchaseData });
         }
-    }, [ingredientToEdit]);
+    }, [ingredientToEdit, mode]);
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         if ((name === 'packagePrice' || name === 'packageAmount') && value) {
-            if (!/^\d*([.,]\d*)?$/.test(value)) {
+            // Allow comma and dot for decimals, but only one
+            if (!/^\d*([.,]?\d*)?$/.test(value)) {
                 return;
             }
         }
@@ -74,74 +87,131 @@ export const IngredientForm: React.FC<IngredientFormProps> = ({ onSave, onCancel
             return;
         }
 
-        const newPurchase: Purchase = {
-            id: new Date().toISOString() + Math.random(),
+        const purchaseDataFromForm = {
             date: formData.purchaseDate,
             supplier: formData.supplier,
-            packagePrice: packagePrice,
-            packageAmount: packageAmount,
+            packagePrice,
+            packageAmount,
             unit: formData.unit,
         };
-
-        if (ingredientToEdit) {
-             const updatedHistory = [...ingredientToEdit.history, newPurchase]
-                .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-            
-            const latestPurchase = updatedHistory[0];
-
-            const ingredientToSave: Ingredient = {
-                ...ingredientToEdit,
-                // Name is not editable when adding a new purchase
-                // Update top-level props to reflect the latest purchase
-                supplier: latestPurchase.supplier,
-                packagePrice: latestPurchase.packagePrice,
-                packageAmount: latestPurchase.packageAmount,
-                unit: latestPurchase.unit,
-                purchaseDate: latestPurchase.date,
-                history: updatedHistory,
+        
+        const updateIngredientFromHistory = (ingredient: Omit<Ingredient, 'id'>, newHistory: Purchase[]): Ingredient => {
+            const sorted = newHistory.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+            if (sorted.length === 0) {
+                 return { ...ingredient, id: (ingredient as Ingredient).id || '', history: [], purchaseDate: undefined, supplier: undefined, packagePrice: 0, packageAmount: 0, unit: 'g' };
+            }
+            const latest = sorted[0];
+            return {
+                ...ingredient,
+                id: (ingredient as Ingredient).id || '',
+                supplier: latest.supplier,
+                packagePrice: latest.packagePrice,
+                packageAmount: latest.packageAmount,
+                unit: latest.unit,
+                purchaseDate: latest.date,
+                history: sorted,
             };
-            onSave(ingredientToSave);
+        }
 
-        } else {
-            const ingredientToSave: Ingredient = {
+
+        if (mode === 'edit' && ingredientToEdit) {
+            const sortedHistory = [...ingredientToEdit.history].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+            const latestPurchaseId = sortedHistory.length > 0 ? sortedHistory[0].id : null;
+            
+            if (!latestPurchaseId) {
+                alert("Erro: não foi possível encontrar a compra mais recente para editar.");
+                return;
+            }
+
+            const updatedHistory = ingredientToEdit.history.map(p =>
+                p.id === latestPurchaseId ? { ...p, ...purchaseDataFromForm } : p
+            );
+            
+            const ingredientShell = { ...ingredientToEdit, name: formData.name };
+            onSave(updateIngredientFromHistory(ingredientShell, updatedHistory));
+
+        } else if (mode === 'addPurchase' && ingredientToEdit) {
+            const newPurchase: Purchase = {
                 id: new Date().toISOString() + Math.random(),
+                ...purchaseDataFromForm,
+            };
+            const updatedHistory = [...ingredientToEdit.history, newPurchase];
+            onSave(updateIngredientFromHistory(ingredientToEdit, updatedHistory));
+
+        } else { // mode === 'create'
+            const newPurchase: Purchase = {
+                id: new Date().toISOString() + Math.random(),
+                ...purchaseDataFromForm,
+            };
+
+            // FIX: Add missing properties to satisfy the Omit<Ingredient, 'id'> type.
+            // These are temporary values that will be overwritten by updateIngredientFromHistory.
+            const ingredientShell: Omit<Ingredient, 'id'> = {
                 name: formData.name,
-                supplier: newPurchase.supplier,
-                packagePrice: newPurchase.packagePrice,
-                packageAmount: newPurchase.packageAmount,
-                unit: newPurchase.unit,
-                purchaseDate: newPurchase.date,
+                packagePrice: 0,
+                packageAmount: 0,
+                unit: 'g', // temporary
                 history: [newPurchase],
             };
-            onSave(ingredientToSave);
+            const newIngredient = updateIngredientFromHistory(ingredientShell, [newPurchase]);
+            
+            onSave({
+                ...newIngredient,
+                id: new Date().toISOString() + Math.random(),
+            });
         }
     };
+    
+    const titles = {
+        create: 'Novo Ingrediente',
+        edit: 'Editar Ingrediente',
+        addPurchase: 'Registrar Nova Compra'
+    };
+    
+    const buttonLabels = {
+        create: 'Salvar Ingrediente',
+        edit: 'Salvar Alterações',
+        addPurchase: 'Salvar Compra'
+    };
+    
+    const ButtonIcon = mode === 'edit' ? PencilIcon : PlusIcon;
+
 
     return (
         <div className="space-y-8 animate-fade-in">
             <form onSubmit={handleSubmit}>
                 <div className="flex justify-between items-center mb-8 flex-wrap gap-4">
                     <h1 className="font-display text-4xl text-brand-text dark:text-rose-100">
-                        {ingredientToEdit ? 'Registrar Nova Compra' : 'Novo Ingrediente'}
+                        {titles[mode]}
                     </h1>
                     <div className="flex gap-2">
                         <button type="button" onClick={onCancel} className="bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-bold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105">
                             Cancelar
                         </button>
                         <button type="submit" className="flex items-center justify-center gap-2 bg-brand-primary hover:bg-rose-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105">
-                            <PlusIcon className="w-5 h-5" />
-                            <span>{ingredientToEdit ? 'Salvar Compra' : 'Salvar Ingrediente'}</span>
+                            <ButtonIcon className="w-5 h-5" />
+                            <span>{buttonLabels[mode]}</span>
                         </button>
                     </div>
                 </div>
 
-                {ingredientToEdit && (
+                {mode === 'addPurchase' && ingredientToEdit && (
                   <div className="bg-rose-50 dark:bg-gray-700/50 p-4 rounded-lg mb-6 border border-rose-200 dark:border-gray-600">
                     <p className="text-brand-text dark:text-gray-200">
                       Você está adicionando uma nova compra para o ingrediente: <strong className="font-semibold">{ingredientToEdit.name}</strong>.
                     </p>
                     <p className="text-sm text-brand-light-text dark:text-gray-400">
-                      Preencha os detalhes da nova aquisição abaixo.
+                      Preencha os detalhes da nova aquisição abaixo. O nome não pode ser alterado aqui.
+                    </p>
+                  </div>
+                )}
+                 {mode === 'edit' && ingredientToEdit && (
+                  <div className="bg-blue-50 dark:bg-gray-700/50 p-4 rounded-lg mb-6 border border-blue-200 dark:border-gray-600">
+                    <p className="text-brand-text dark:text-gray-200">
+                      Você está editando <strong className="font-semibold">{ingredientToEdit.name}</strong> e sua compra mais recente.
+                    </p>
+                    <p className="text-sm text-brand-light-text dark:text-gray-400">
+                      Alterações nos dados da compra (preço, quantidade, etc.) irão sobrescrever o último registro.
                     </p>
                   </div>
                 )}
@@ -151,7 +221,7 @@ export const IngredientForm: React.FC<IngredientFormProps> = ({ onSave, onCancel
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                         <div className="lg:col-span-2">
                             <label htmlFor="name" className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Nome do Ingrediente</label>
-                            <input type="text" name="name" id="name" value={formData.name} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 dark:text-gray-200 border border-rose-200 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-secondary focus:border-brand-secondary disabled:bg-gray-100 dark:disabled:bg-gray-600" placeholder="Farinha de Trigo" required disabled={!!ingredientToEdit} />
+                            <input type="text" name="name" id="name" value={formData.name} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 dark:text-gray-200 border border-rose-200 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-secondary focus:border-brand-secondary disabled:bg-gray-100 dark:disabled:bg-gray-600" placeholder="Farinha de Trigo" required disabled={mode === 'addPurchase'} />
                         </div>
                          <div>
                             <label htmlFor="purchaseDate" className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Data da Compra</label>
