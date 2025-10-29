@@ -71,6 +71,7 @@ const App: React.FC = () => {
   const [ingredientToEdit, setIngredientToEdit] = useState<Ingredient | null>(null);
   const [ingredientFormMode, setIngredientFormMode] = useState<'create' | 'edit' | 'addPurchase'>('create');
   const [ingredientToView, setIngredientToView] = useState<Ingredient | null>(null);
+  const [highlightedIngredientId, setHighlightedIngredientId] = useState<string | null>(null);
   const [packagingToEdit, setPackagingToEdit] = useState<Packaging | null>(null);
   const [isDarkMode, setIsDarkMode] = useDarkMode();
 
@@ -201,11 +202,15 @@ const App: React.FC = () => {
     });
     setIngredientToEdit(null);
 
-    // After saving an edit, go to details. After creating, go to list.
-    if (wasEditing && ingredientFormMode === 'edit') {
-      setIngredientToView(ingredient);
-      setPage('ingredient-details');
-    } else {
+    if (wasEditing) {
+      if (ingredientFormMode === 'addPurchase') {
+        setIngredientToView(ingredient);
+        setPage('ingredient-details');
+      } else { // edit mode
+        setHighlightedIngredientId(ingredient.id);
+        setPage('ingredients');
+      }
+    } else { // create mode
       setPage('ingredients');
     }
   };
@@ -321,6 +326,8 @@ const App: React.FC = () => {
           onDelete={handleDeleteIngredient}
           onViewDetails={handleViewIngredientDetails}
           onImport={setIngredients}
+          highlightedId={highlightedIngredientId}
+          onHighlightComplete={() => setHighlightedIngredientId(null)}
         />;
       case 'packaging':
         return <PackagingManager

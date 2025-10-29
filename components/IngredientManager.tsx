@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import type { Ingredient } from '../types';
 import { PlusIcon } from './icons/PlusIcon';
 import { PencilIcon } from './icons/PencilIcon';
@@ -17,14 +17,31 @@ interface IngredientManagerProps {
   onDelete: (ingredientId: string) => void;
   onViewDetails: (ingredient: Ingredient) => void;
   onImport: (newIngredients: Ingredient[]) => void;
+  highlightedId: string | null;
+  onHighlightComplete: () => void;
 }
 
-export const IngredientManager: React.FC<IngredientManagerProps> = ({ ingredients, onAddNew, onEdit, onDelete, onViewDetails, onImport }) => {
+export const IngredientManager: React.FC<IngredientManagerProps> = ({ ingredients, onAddNew, onEdit, onDelete, onViewDetails, onImport, highlightedId, onHighlightComplete }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [ingredientIdToDelete, setIngredientIdToDelete] = useState<string | null>(null);
   const [dataToImport, setDataToImport] = useState<Ingredient[] | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
+  useEffect(() => {
+    if (highlightedId) {
+      const itemElement = document.getElementById(`ingredient-${highlightedId}`);
+      if (itemElement) {
+        itemElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+
+      const timer = setTimeout(() => {
+        onHighlightComplete();
+      }, 3000); // Highlight for 3 seconds
+
+      return () => clearTimeout(timer);
+    }
+  }, [highlightedId, onHighlightComplete]);
+
   const triggerDelete = (id: string) => {
     setIngredientIdToDelete(id);
   };
@@ -141,28 +158,35 @@ export const IngredientManager: React.FC<IngredientManagerProps> = ({ ingredient
           <div className="max-h-[60vh] overflow-y-auto pr-2">
             {filteredIngredients.length > 0 ? (
               <ul className="space-y-3">
-                {filteredIngredients.map(ing => (
-                  <li key={ing.id} className="flex justify-between items-center bg-rose-50 dark:bg-gray-700/50 p-3 rounded-lg border border-rose-200 dark:border-gray-600">
-                    <div>
-                      <p className="font-semibold text-brand-text dark:text-gray-200">{ing.name}</p>
-                      <p className="text-sm text-brand-light-text dark:text-gray-400">
-                        {formatCurrency(ing.packagePrice)} / {ing.packageAmount}{ing.unit}
-                        {ing.supplier && <span className="italic"> - {ing.supplier}</span>}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => onViewDetails(ing)} aria-label="Ver detalhes" className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">
-                        <InformationCircleIcon className="w-5 h-5" />
-                      </button>
-                      <button onClick={() => onEdit(ing)} aria-label="Editar ingrediente" className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 p-1 rounded-full hover:bg-blue-100 dark:hover:bg-gray-600 transition-colors">
-                        <PencilIcon className="w-5 h-5" />
-                      </button>
-                      <button onClick={() => triggerDelete(ing.id)} aria-label="Excluir ingrediente" className="text-rose-400 hover:text-brand-primary dark:text-gray-400 dark:hover:text-rose-400 p-1 rounded-full hover:bg-rose-100 dark:hover:bg-gray-600 transition-colors">
-                        <TrashIcon className="w-5 h-5" />
-                      </button>
-                    </div>
-                  </li>
-                ))}
+                {filteredIngredients.map(ing => {
+                  const isHighlighted = ing.id === highlightedId;
+                  return (
+                    <li 
+                      key={ing.id} 
+                      id={`ingredient-${ing.id}`}
+                      className={`flex justify-between items-center p-3 rounded-lg border transition-all duration-1000 ${isHighlighted ? 'bg-rose-100 dark:bg-rose-900/50 ring-2 ring-brand-secondary' : 'bg-rose-50 dark:bg-gray-700/50 border-rose-200 dark:border-gray-600'}`}
+                    >
+                      <div>
+                        <p className="font-semibold text-brand-text dark:text-gray-200">{ing.name}</p>
+                        <p className="text-sm text-brand-light-text dark:text-gray-400">
+                          {formatCurrency(ing.packagePrice)} / {ing.packageAmount}{ing.unit}
+                          {ing.supplier && <span className="italic"> - {ing.supplier}</span>}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => onViewDetails(ing)} aria-label="Ver detalhes" className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">
+                          <InformationCircleIcon className="w-5 h-5" />
+                        </button>
+                        <button onClick={() => onEdit(ing)} aria-label="Editar ingrediente" className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 p-1 rounded-full hover:bg-blue-100 dark:hover:bg-gray-600 transition-colors">
+                          <PencilIcon className="w-5 h-5" />
+                        </button>
+                        <button onClick={() => triggerDelete(ing.id)} aria-label="Excluir ingrediente" className="text-rose-400 hover:text-brand-primary dark:text-gray-400 dark:hover:text-rose-400 p-1 rounded-full hover:bg-rose-100 dark:hover:bg-gray-600 transition-colors">
+                          <TrashIcon className="w-5 h-5" />
+                        </button>
+                      </div>
+                    </li>
+                  )
+                })}
               </ul>
             ) : (
               <div className="text-center py-16">

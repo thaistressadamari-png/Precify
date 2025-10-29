@@ -1,5 +1,4 @@
 
-
 import React, { useMemo, useState } from 'react';
 import type { Ingredient, Purchase } from '../types';
 import { ArrowLeftIcon } from './icons/ArrowLeftIcon';
@@ -22,9 +21,9 @@ type Period = '30d' | '6m' | '1y' | 'all';
 const LineChart: React.FC<{ data: { date: Date; price: number }[] }> = ({ data }) => {
     const [tooltip, setTooltip] = useState<{ x: number; y: number; date: string; price: string } | null>(null);
 
-    const width = 400;
-    const height = 220;
-    const margin = { top: 20, right: 15, bottom: 30, left: 45 };
+    const width = 300;
+    const height = 90;
+    const margin = { top: 10, right: 15, bottom: 20, left: 40 };
     const innerWidth = width - margin.left - margin.right;
     const innerHeight = height - margin.top - margin.bottom;
     
@@ -53,14 +52,14 @@ const LineChart: React.FC<{ data: { date: Date; price: number }[] }> = ({ data }
 
     const linePath = data.map(d => `${xScale(d.date)},${yScale(d.price)}`).join(' L ');
     
-    const yAxisTicks = 4;
+    const yAxisTicks = 2;
     const yGridLines = useMemo(() => Array.from({ length: yAxisTicks + 1 }, (_, i) => {
         const price = minPrice + (i * (maxPrice - minPrice)) / yAxisTicks;
         return {
             y: yScale(price),
             label: formatCurrency(price),
         };
-    }), [minPrice, maxPrice, yScale]);
+    }), [minPrice, maxPrice, yScale, yAxisTicks]);
 
     return (
     <div className="relative">
@@ -70,7 +69,7 @@ const LineChart: React.FC<{ data: { date: Date; price: number }[] }> = ({ data }
             {yGridLines.map((tick, i) => (
                 <g key={i} className="text-gray-400">
                     <line x1={margin.left} y1={tick.y} x2={width - margin.right} y2={tick.y} className="stroke-current text-gray-200 dark:text-gray-700" strokeDasharray="2,2" />
-                    <text x={margin.left - 8} y={tick.y} textAnchor="end" alignmentBaseline="middle" className="text-xs fill-current">{tick.label}</text>
+                    <text x={margin.left - 5} y={tick.y} textAnchor="end" alignmentBaseline="middle" className="text-[10px] fill-current">{tick.label}</text>
                 </g>
             ))}
             
@@ -80,11 +79,11 @@ const LineChart: React.FC<{ data: { date: Date; price: number }[] }> = ({ data }
             {/* X Axis Labels */}
             {data.length > 0 && (
                 <g className="text-gray-400">
-                    <text x={margin.left} y={height - margin.bottom + 15} textAnchor="start" alignmentBaseline="middle" className="text-xs fill-current">
+                    <text x={margin.left} y={height - margin.bottom + 12} textAnchor="start" alignmentBaseline="middle" className="text-[10px] fill-current">
                         {minDate.toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit', year: '2-digit'})}
                     </text>
                     {maxDate.getTime() !== minDate.getTime() &&
-                        <text x={width - margin.right} y={height - margin.bottom + 15} textAnchor="end" alignmentBaseline="middle" className="text-xs fill-current">
+                        <text x={width - margin.right} y={height - margin.bottom + 12} textAnchor="end" alignmentBaseline="middle" className="text-[10px] fill-current">
                             {maxDate.toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit', year: '2-digit'})}
                         </text>
                     }
@@ -92,7 +91,7 @@ const LineChart: React.FC<{ data: { date: Date; price: number }[] }> = ({ data }
             )}
 
             {/* Line */}
-            {data.length > 1 && <path d={`M ${linePath}`} fill="none" strokeWidth="2" className="stroke-current text-brand-secondary" />}
+            {data.length > 1 && <path d={`M ${linePath}`} fill="none" strokeWidth="1.5" className="stroke-current text-brand-secondary" />}
 
             {/* Points and Labels */}
             {data.map((d, i) => (
@@ -100,7 +99,7 @@ const LineChart: React.FC<{ data: { date: Date; price: number }[] }> = ({ data }
                 <circle 
                   cx={xScale(d.date)} 
                   cy={yScale(d.price)} 
-                  r="5" 
+                  r="3" 
                   className="fill-current text-brand-primary cursor-pointer stroke-2 stroke-white dark:stroke-gray-800"
                   onMouseEnter={() => setTooltip({
                       x: (xScale(d.date) / width) * 100,
@@ -110,14 +109,16 @@ const LineChart: React.FC<{ data: { date: Date; price: number }[] }> = ({ data }
                   })}
                   onMouseLeave={() => setTooltip(null)}
                 />
+                {data.length < 10 && (
                 <text
                     x={xScale(d.date)}
-                    y={yScale(d.price) - 10}
+                    y={yScale(d.price) - 6}
                     textAnchor="middle"
-                    className="text-xs fill-current text-brand-text dark:text-gray-300 font-semibold"
+                    className="text-[10px] fill-current text-brand-text dark:text-gray-300 font-semibold"
                 >
                     {formatCurrency(d.price)}
                 </text>
+                )}
               </g>
             ))}
         </g>
@@ -244,8 +245,54 @@ export const IngredientDetails: React.FC<IngredientDetailsProps> = ({ ingredient
             </div>
       </div>
       
-       <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700">
-            <h2 className="font-display text-2xl text-brand-text dark:text-rose-100 mb-2">Variação de Preço ao Longo do Tempo</h2>
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 items-start">
+        <div className="lg:col-span-3 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700 h-full">
+            <h2 className="font-display text-2xl text-brand-text dark:text-rose-100 mb-4">Histórico de Compras</h2>
+            <div className="max-h-[400px] overflow-y-auto pr-2">
+                {sortedHistory.length > 0 ? (
+                    <table className="w-full text-left">
+                        <thead className="sticky top-0 bg-rose-50 dark:bg-gray-700/80 backdrop-blur-sm">
+                            <tr>
+                                <th className="p-2 text-sm font-semibold text-brand-light-text dark:text-gray-400">Data</th>
+                                <th className="p-2 text-sm font-semibold text-brand-light-text dark:text-gray-400">Fornecedor</th>
+                                <th className="p-2 text-sm font-semibold text-brand-light-text dark:text-gray-400 text-right">Quantidade</th>
+                                <th className="p-2 text-sm font-semibold text-brand-light-text dark:text-gray-400 text-right">Valor</th>
+                                <th className="p-2 text-sm font-semibold text-brand-light-text dark:text-gray-400 text-right">Preço / Un. Base</th>
+                                <th className="p-2 text-sm font-semibold text-brand-light-text dark:text-gray-400 text-right">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-rose-100 dark:divide-gray-700">
+                            {sortedHistory.map((purchase: Purchase) => {
+                                const { pricePerUnit, baseUnitLabel } = getPricePerBaseUnit(purchase.packagePrice, purchase.packageAmount, purchase.unit);
+                                return (
+                                    <tr key={purchase.id} className="hover:bg-rose-50 dark:hover:bg-gray-700/50">
+                                        <td className="p-2 text-brand-text dark:text-gray-300">{new Date(purchase.date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</td>
+                                        <td className="p-2 text-brand-text dark:text-gray-300">{purchase.supplier || 'N/A'}</td>
+                                        <td className="p-2 text-brand-text dark:text-gray-300 text-right font-mono">{purchase.packageAmount}{purchase.unit}</td>
+                                        <td className="p-2 text-brand-text dark:text-gray-300 text-right font-mono">{formatCurrency(purchase.packagePrice)}</td>
+                                        <td className="p-2 text-brand-text dark:text-gray-300 text-right font-mono">{formatCurrency(pricePerUnit)} / {baseUnitLabel}</td>
+                                        <td className="p-2 text-right">
+                                            <button 
+                                            onClick={() => setPurchaseToDelete(purchase)}
+                                            aria-label="Excluir compra" 
+                                            className="text-rose-400 hover:text-brand-primary dark:text-gray-400 dark:hover:text-rose-400 p-1 rounded-full hover:bg-rose-100 dark:hover:bg-gray-600 transition-colors"
+                                            >
+                                            <TrashIcon className="w-5 h-5" />
+                                            </button>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                ) : (
+                    <p className="text-center text-brand-light-text dark:text-gray-400 italic py-4">Nenhum histórico de compra encontrado.</p>
+                )}
+            </div>
+        </div>
+
+        <div className="lg:col-span-2 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700 h-full">
+            <h2 className="font-display text-2xl text-brand-text dark:text-rose-100 mb-2">Variação de Preço</h2>
             <div className="flex justify-center flex-wrap gap-2 mb-4">
                 {(['30d', '6m', '1y', 'all'] as const).map(p => (
                     <button
@@ -272,50 +319,6 @@ export const IngredientDetails: React.FC<IngredientDetailsProps> = ({ ingredient
                 </div>
             )}
        </div>
-
-      <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700">
-        <h2 className="font-display text-2xl text-brand-text dark:text-rose-100 mb-4">Histórico de Compras</h2>
-        <div className="max-h-96 overflow-y-auto pr-2">
-            {sortedHistory.length > 0 ? (
-                <table className="w-full text-left">
-                    <thead className="sticky top-0 bg-rose-50 dark:bg-gray-700/80 backdrop-blur-sm">
-                        <tr>
-                            <th className="p-2 text-sm font-semibold text-brand-light-text dark:text-gray-400">Data</th>
-                            <th className="p-2 text-sm font-semibold text-brand-light-text dark:text-gray-400">Fornecedor</th>
-                            <th className="p-2 text-sm font-semibold text-brand-light-text dark:text-gray-400 text-right">Quantidade</th>
-                            <th className="p-2 text-sm font-semibold text-brand-light-text dark:text-gray-400 text-right">Valor</th>
-                            <th className="p-2 text-sm font-semibold text-brand-light-text dark:text-gray-400 text-right">Preço / Un. Base</th>
-                            <th className="p-2 text-sm font-semibold text-brand-light-text dark:text-gray-400 text-right">Ações</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-rose-100 dark:divide-gray-700">
-                        {sortedHistory.map((purchase: Purchase) => {
-                            const { pricePerUnit, baseUnitLabel } = getPricePerBaseUnit(purchase.packagePrice, purchase.packageAmount, purchase.unit);
-                            return (
-                                <tr key={purchase.id} className="hover:bg-rose-50 dark:hover:bg-gray-700/50">
-                                    <td className="p-2 text-brand-text dark:text-gray-300">{new Date(purchase.date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</td>
-                                    <td className="p-2 text-brand-text dark:text-gray-300">{purchase.supplier || 'N/A'}</td>
-                                    <td className="p-2 text-brand-text dark:text-gray-300 text-right font-mono">{purchase.packageAmount}{purchase.unit}</td>
-                                    <td className="p-2 text-brand-text dark:text-gray-300 text-right font-mono">{formatCurrency(purchase.packagePrice)}</td>
-                                    <td className="p-2 text-brand-text dark:text-gray-300 text-right font-mono">{formatCurrency(pricePerUnit)} / {baseUnitLabel}</td>
-                                    <td className="p-2 text-right">
-                                        <button 
-                                          onClick={() => setPurchaseToDelete(purchase)}
-                                          aria-label="Excluir compra" 
-                                          className="text-rose-400 hover:text-brand-primary dark:text-gray-400 dark:hover:text-rose-400 p-1 rounded-full hover:bg-rose-100 dark:hover:bg-gray-600 transition-colors"
-                                        >
-                                          <TrashIcon className="w-5 h-5" />
-                                        </button>
-                                    </td>
-                                </tr>
-                            );
-                        })}
-                    </tbody>
-                </table>
-            ) : (
-                <p className="text-center text-brand-light-text dark:text-gray-400 italic py-4">Nenhum histórico de compra encontrado.</p>
-            )}
-        </div>
       </div>
     </div>
     <ConfirmModal
