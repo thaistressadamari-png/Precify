@@ -118,7 +118,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ ingredients, recipes, fill
 
   return (
     <div className="space-y-8 animate-fade-in">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <StatCard 
             icon={ShoppingBagIcon}
             label="Ingredientes Cadastrados"

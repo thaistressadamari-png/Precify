@@ -184,6 +184,7 @@ export const PackagingManager: React.FC<PackagingManagerProps> = ({ packaging, o
         message="A importação substituirá TODAS as suas embalagens atuais. Esta ação não pode ser desfeita. Deseja continuar?"
         onConfirm={confirmImport}
         onCancel={() => setDataToImport(null)}
+        confirmText="Confirmar Importação"
       />
     </>
   );

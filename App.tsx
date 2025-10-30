@@ -353,36 +353,36 @@ const App: React.FC = () => {
         setIngredientToEdit(null); setIngredientToView(null);
         setPackagingToEdit(null);
       }}
-      className={`flex flex-col md:flex-row items-center justify-center md:justify-start gap-2 md:gap-3 px-3 py-2 rounded-lg text-sm md:text-base font-medium transition-colors w-full text-left ${activePage === targetPage ? 'bg-brand-primary text-white' : 'text-brand-light-text dark:text-gray-400 hover:bg-rose-100 dark:hover:bg-gray-700'}`}
+      className={`flex flex-col items-center justify-center p-2 rounded-lg text-sm font-medium transition-colors w-full text-left lg:flex-row lg:justify-start lg:gap-3 lg:px-3 lg:py-2 ${activePage === targetPage ? 'bg-brand-primary text-white' : 'text-brand-light-text dark:text-gray-400 hover:bg-rose-100 dark:hover:bg-gray-700'}`}
     >
       <Icon className="w-6 h-6"/>
-      <span className={`${activePage === targetPage ? 'inline text-xs' : 'hidden'} md:inline md:text-base`}>{label}</span>
+      <span className={`mt-1 text-xs lg:mt-0 lg:text-base ${activePage === targetPage ? 'block' : 'hidden'} md:block`}>{label}</span>
     </button>
   );
 
   return (
     <div className="bg-rose-50 dark:bg-gray-900 min-h-screen text-brand-text dark:text-gray-200 font-sans transition-colors">
       <div className="container mx-auto px-4 py-8">
-        <div className="md:grid md:grid-cols-12 md:gap-8">
-          <aside className="md:col-span-2 mb-8 md:mb-0">
+        <div className="lg:grid lg:grid-cols-12 lg:gap-8">
+          <aside className="lg:col-span-2 mb-8 lg:mb-0">
             <div className="sticky top-8">
-              <h1 className="font-display text-2xl font-bold text-brand-primary mb-6 hidden md:block">Precify</h1>
-              <nav className="flex md:flex-col justify-around md:justify-start md:space-y-2 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-2 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700">
+              <h1 className="font-display text-2xl font-bold text-brand-primary mb-6 hidden lg:block">Precify</h1>
+              <nav className="flex lg:flex-col justify-around lg:justify-start lg:space-y-2 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-2 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700">
                 <NavItem label="Dashboard" targetPage="dashboard" icon={ChartBarIcon}/>
                 <NavItem label="Ingredientes" targetPage="ingredients" icon={ShoppingBagIcon}/>
                 <NavItem label="Embalagens" targetPage="packaging" icon={BoxIcon}/>
                 <NavItem label="Receitas" targetPage="recipes" icon={BookOpenIcon}/>
                 <NavItem label="Recheios" targetPage="fillings" icon={FireIcon}/>
                 <NavItem label="Ajustes" targetPage="settings" icon={AdjustmentsHorizontalIcon}/>
-                 <div className="hidden md:block border-t border-rose-200 dark:border-gray-700 my-2"></div>
-                <button onClick={() => setIsDarkMode(!isDarkMode)} className="flex flex-col md:flex-row items-center justify-center md:justify-start gap-2 md:gap-3 px-3 py-2 rounded-lg text-sm md:text-base font-medium transition-colors w-full text-left text-brand-light-text dark:text-gray-400 hover:bg-rose-100 dark:hover:bg-gray-700">
+                 <div className="hidden lg:block border-t border-rose-200 dark:border-gray-700 my-2"></div>
+                <button onClick={() => setIsDarkMode(!isDarkMode)} className="flex flex-col items-center justify-center p-2 rounded-lg text-sm font-medium transition-colors w-full text-left text-brand-light-text dark:text-gray-400 hover:bg-rose-100 dark:hover:bg-gray-700 lg:flex-row lg:justify-start lg:gap-3 lg:px-3 lg:py-2">
                     {isDarkMode ? <SunIcon className="w-6 h-6" /> : <MoonIcon className="w-6 h-6" />}
-                    <span className="hidden md:inline">{isDarkMode ? 'Modo Claro' : 'Modo Escuro'}</span>
+                    <span className="hidden md:block mt-1 text-xs lg:mt-0 lg:text-base">{isDarkMode ? 'Modo Claro' : 'Modo Escuro'}</span>
                 </button>
               </nav>
             </div>
           </aside>
-          <main className="md:col-span-10">
+          <main className="lg:col-span-10">
             {renderPage()}
           </main>
         </div>

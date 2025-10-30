@@ -119,7 +119,6 @@ export const defaultIngredients: Ingredient[] = [
   {
     "id": "1761066513357",
     "name": "Leite",
-    // FIX: Changed "L" to "l" to match the Unit type.
     "unit": "l",
     "supplier": "Inova",
     "packagePrice": 4.59,
@@ -132,7 +131,6 @@ export const defaultIngredients: Ingredient[] = [
         "supplier": "Inova",
         "packagePrice": 4.59,
         "packageAmount": 1,
-        // FIX: Changed "L" to "l" to match the Unit type.
         "unit": "l"
       }
     ]

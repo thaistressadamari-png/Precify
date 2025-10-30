@@ -6,9 +6,10 @@ interface ConfirmModalProps {
   message: string;
   onConfirm: () => void;
   onCancel: () => void;
+  confirmText?: string;
 }
 
-export const ConfirmModal: React.FC<ConfirmModalProps> = ({ isOpen, title, message, onConfirm, onCancel }) => {
+export const ConfirmModal: React.FC<ConfirmModalProps> = ({ isOpen, title, message, onConfirm, onCancel, confirmText }) => {
   if (!isOpen) return null;
 
   return (
@@ -27,7 +28,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({ isOpen, title, messa
             onClick={onConfirm}
             className="bg-brand-primary hover:bg-rose-700 text-white font-bold py-2 px-6 rounded-lg shadow-md transition-transform transform hover:scale-105"
           >
-            Confirmar Exclusão
+            {confirmText || 'Confirmar Exclusão'}
           </button>
         </div>
       </div>

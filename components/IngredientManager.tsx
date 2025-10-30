@@ -215,6 +215,7 @@ export const IngredientManager: React.FC<IngredientManagerProps> = ({ ingredient
         message="A importação substituirá TODOS os seus ingredientes atuais. Esta ação não pode ser desfeita. Deseja continuar?"
         onConfirm={confirmImport}
         onCancel={() => setDataToImport(null)}
+        confirmText="Confirmar Importação"
       />
     </>
   );

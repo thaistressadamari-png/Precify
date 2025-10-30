@@ -248,6 +248,7 @@ export const Recipes: React.FC<RecipesProps> = ({ recipes, onAddNew, onEdit, onD
         message={`A importação substituirá TODOS os seus itens atuais. Esta ação não pode ser desfeita. Deseja continuar?`}
         onConfirm={confirmImport}
         onCancel={() => setDataToImport(null)}
+        confirmText="Confirmar Importação"
     />
     </>
   );
