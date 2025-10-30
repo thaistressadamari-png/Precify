@@ -1,6 +1,7 @@
 
+
 import React, { useMemo } from 'react';
-import type { Ingredient, Recipe, AppSettings, Packaging, Page } from '../types';
+import type { Ingredient, Recipe, AppSettings, Packaging, Page, Unit } from '../types';
 import { ShoppingBagIcon } from './icons/ShoppingBagIcon';
 import { BookOpenIcon } from './icons/BookOpenIcon';
 import { AdjustmentsHorizontalIcon } from './icons/AdjustmentsHorizontalIcon';
@@ -13,6 +14,7 @@ import { formatCurrency } from './utils';
 interface DashboardProps {
   ingredients: Ingredient[];
   recipes: Recipe[];
+  fillings: Recipe[];
   packaging: Packaging[];
   settings: AppSettings;
   setPage: (page: Page) => void;
@@ -20,25 +22,42 @@ interface DashboardProps {
   onGoToEditIngredient: (ingredient: Ingredient) => void;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ ingredients, recipes, packaging, settings, setPage, onGoToEditRecipe, onGoToEditIngredient }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ ingredients, recipes, fillings, packaging, settings, setPage, onGoToEditRecipe, onGoToEditIngredient }) => {
+
+  const ingredientsWithFillings = useMemo(() => {
+    const fillingsAsIngredients: Ingredient[] = fillings
+      .filter(f => calculateCosts(f, ingredients, packaging, settings, 'filling').netYieldAmount > 0)
+      .map(filling => {
+        const costs = calculateCosts(filling, ingredients, packaging, settings, 'filling');
+        return {
+            id: `filling-${filling.id}`,
+            name: `${filling.name} (Recheio)`,
+            packagePrice: costs.totalCost,
+            packageAmount: costs.netYieldAmount,
+            unit: filling.yieldUnit as Unit,
+            history: [],
+        };
+    });
+    return [...ingredients, ...fillingsAsIngredients];
+  }, [ingredients, fillings, packaging, settings]);
 
   const recipesWithCalculatedCosts = useMemo(() => {
     return recipes.map(recipe => ({
       ...recipe,
-      ...calculateCosts(recipe, ingredients, packaging, settings, 'recipe'),
+      ...calculateCosts(recipe, ingredientsWithFillings, packaging, settings, 'recipe'),
     }));
-  }, [recipes, ingredients, packaging, settings]);
+  }, [recipes, ingredientsWithFillings, packaging, settings]);
   
-  const topCostlyRecipes = recipesWithCalculatedCosts
-    .filter(r => r.pricePerKg > 0)
-    .sort((a, b) => b.pricePerKg - a.pricePerKg)
+  const topProfitableRecipes = recipesWithCalculatedCosts
+    .filter(r => r.profitValue > 0)
+    .sort((a, b) => b.profitValue - a.profitValue)
     .slice(0, 5);
     
   const alerts = useMemo(() => {
     const recipesWithMissingItems = recipes.filter(recipe => {
         const hasMissingIngredient = recipe.ingredientSections?.some(section =>
             section.ingredients.some(
-                recipeIng => !ingredients.find(ing => ing.id === recipeIng.ingredientId)
+                recipeIng => !ingredientsWithFillings.find(ing => ing.id === recipeIng.ingredientId)
             )
         );
         const hasMissingPackaging = recipe.packaging.some(
@@ -62,7 +81,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ ingredients, recipes, pack
 
 
     return { recipesWithMissingItems: uniqueRecipesWithMissingItems, outdatedIngredients };
-  }, [recipes, ingredients, packaging, settings.ingredientOutdatedDays]);
+  }, [recipes, ingredients, ingredientsWithFillings, packaging, settings.ingredientOutdatedDays]);
 
   const StatCard: React.FC<{
     icon: React.ElementType,
@@ -160,27 +179,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ ingredients, recipes, pack
             )}
         </div>
         <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700 h-full">
-            <h2 className="font-display text-2xl text-brand-text dark:text-rose-100 mb-4">Top 5 Receitas por Custo (R$/kg)</h2>
-            {topCostlyRecipes.length > 0 ? (
+            <h2 className="font-display text-2xl text-brand-text dark:text-rose-100 mb-4">Top 5 Receitas Mais Lucrativas</h2>
+            {topProfitableRecipes.length > 0 ? (
             <ul className="space-y-3">
-                {topCostlyRecipes.map((recipe, index) => (
+                {topProfitableRecipes.map((recipe, index) => (
                 <li key={recipe.id} className="flex justify-between items-center bg-rose-50 dark:bg-gray-700/50 p-4 rounded-lg border border-rose-200 dark:border-gray-600">
                     <div className="flex items-center gap-4">
                     <span className="text-xl font-bold text-brand-accent">#{index + 1}</span>
                     <div>
                             <p className="font-semibold text-brand-text dark:text-gray-200">{recipe.name}</p>
-                            <p className="text-sm text-brand-light-text dark:text-gray-400">Custo Total: {formatCurrency(recipe.totalCost)}</p>
+                            <p className="text-sm text-brand-light-text dark:text-gray-400">Venda: {formatCurrency(recipe.finalSalePrice)}</p>
                     </div>
                     </div>
                     <div className="text-right">
-                        <p className="font-bold text-green-600 dark:text-green-400 text-lg">{formatCurrency(recipe.pricePerKg)}</p>
-                        <p className="text-sm text-brand-light-text dark:text-gray-400">Custo por Kg</p>
+                        <p className="font-bold text-green-600 dark:text-green-400 text-lg">{formatCurrency(recipe.profitValue)}</p>
+                        <p className="text-sm text-brand-light-text dark:text-gray-400">Lucro Bruto (Total)</p>
                     </div>
                 </li>
                 ))}
             </ul>
             ) : (
-            <p className="text-center text-brand-light-text dark:text-gray-400 italic py-4">Nenhuma receita com rendimento em peso (g/kg) para classificar.</p>
+            <p className="text-center text-brand-light-text dark:text-gray-400 italic py-4">Nenhuma receita com lucro calculado para classificar.</p>
             )}
         </div>
       </div>

@@ -41,6 +41,8 @@ const createEmptyRecipe = (): Omit<Recipe, 'id'>=> ({
   energyUsageMinutes: 0,
   gasUsageMinutes: 0,
   evaporationPercentage: 0,
+  variableCostsPercentage: 10,
+  profitMargin: 30,
   preparationMethod: [''],
   observationsTitle: 'Observações',
   observations: [''],
@@ -173,7 +175,6 @@ const TimeInput: React.FC<{
 export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagingItems, settings, onSave, onCancel, recipeToEdit, type }) => {
   const [recipe, setRecipe] = useState<Omit<Recipe, 'id'>>(createEmptyRecipe());
   const [itemToDelete, setItemToDelete] = useState<ItemToDelete | null>(null);
-  const [isYieldManual, setIsYieldManual] = useState(!!recipeToEdit);
 
   useEffect(() => {
     const initialData = recipeToEdit 
@@ -183,8 +184,19 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
     if (initialData.evaporationPercentage === undefined) {
       initialData.evaporationPercentage = 0;
     }
+    
+    if (type === 'recipe' && !recipeToEdit) {
+        initialData.yieldUnit = 'un';
+    }
+
 
     if (type === 'recipe') {
+      if (initialData.variableCostsPercentage === undefined) {
+          initialData.variableCostsPercentage = 10;
+      }
+      if (initialData.profitMargin === undefined) {
+          initialData.profitMargin = 30;
+      }
       if (!initialData.preparationMethod || initialData.preparationMethod.length === 0) {
           initialData.preparationMethod = [''];
       }
@@ -199,30 +211,37 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
     setRecipe(initialData);
   }, [recipeToEdit, type]);
   
-  const grossYield = useMemo(() => {
-    return recipe.ingredientSections.flatMap(s => s.ingredients).reduce((sum, ing) => {
-        if (!ing.amount || !ing.unit) return sum;
-        // Only sum weight and volume units for a sensible total yield
-        if (['g', 'kg', 'ml', 'l'].includes(ing.unit)) {
-            return sum + convertToBaseUnitAmount(ing.amount, ing.unit);
+  const calculatedGrossYield = useMemo(() => {
+    if (type !== 'filling') return 0;
+    
+    return recipe.ingredientSections.flatMap(section => section.ingredients).reduce((total, ing) => {
+        if (ing.unit === 'un') {
+            return total; // Cannot sum units
         }
-        return sum;
+        return total + convertToBaseUnitAmount(ing.amount, ing.unit);
     }, 0);
-  }, [recipe.ingredientSections]);
-
+  }, [recipe.ingredientSections, type]);
+  
   useEffect(() => {
-      if (!isYieldManual && !recipeToEdit) { // Auto-update only for new recipes not manually edited
-          setRecipe(prev => ({...prev, yieldAmount: grossYield}));
-      }
-  }, [grossYield, isYieldManual, recipeToEdit]);
-
+    if (type === 'filling') {
+        let newYieldAmount = calculatedGrossYield;
+        if (recipe.yieldUnit === 'kg' || recipe.yieldUnit === 'l') {
+            newYieldAmount /= 1000;
+        }
+        // Only update if it's different to avoid loops and floating point issues
+        if (Math.abs((recipe.yieldAmount || 0) - newYieldAmount) > 1e-9) {
+            setRecipe(prev => ({
+                ...prev,
+                yieldAmount: newYieldAmount
+            }));
+        }
+    }
+  }, [calculatedGrossYield, recipe.yieldUnit, type]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    if (name === 'yieldAmount') {
-      setIsYieldManual(true);
-    }
-    const isNumber = ['yieldAmount', 'evaporationPercentage'].includes(name);
+    const isNumber = ['yieldAmount', 'evaporationPercentage', 'variableCostsPercentage', 'profitMargin'].includes(name);
+    
     setRecipe(prev => ({ ...prev, [name]: isNumber ? parseFloat(value) || 0 : value } as any));
   };
   
@@ -378,19 +397,34 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if(!recipe.name || recipe.yieldAmount <= 0) {
-        alert("Por favor, preencha o nome e o rendimento (maior que zero).");
+    if (!recipe.name) {
+        alert("Por favor, preencha o nome.");
+        return;
+    }
+    if (type === 'recipe' && recipe.yieldAmount <= 0) {
+        alert("O rendimento da receita deve ser maior que zero.");
+        return;
+    }
+    if (type === 'filling' && calculatedGrossYield <= 0) {
+        alert("Um recheio precisa de ingredientes para ter um rendimento. Adicione ingredientes à lista.");
         return;
     }
 
     const recipeToSave: Recipe = {
       ...(recipeToEdit ? { id: recipeToEdit.id } : { id: new Date().toISOString() }),
       ...recipe,
-      preparationMethod: recipe.preparationMethod?.filter(item => item.trim() !== ''),
-      observations: recipe.observations?.filter(item => item.trim() !== ''),
-      variableCostsPercentage: undefined,
-      profitMargin: undefined,
+      preparationMethod: type === 'recipe' ? recipe.preparationMethod?.filter(item => item.trim() !== '') : undefined,
+      observations: type === 'recipe' ? recipe.observations?.filter(item => item.trim() !== '') : undefined,
     };
+
+    if (type === 'filling') {
+        recipeToSave.variableCostsPercentage = undefined;
+        recipeToSave.profitMargin = undefined;
+    }
+    if (type === 'recipe') {
+        recipeToSave.evaporationPercentage = 0; // Evaporation not used for recipes
+    }
+
     onSave(recipeToSave);
   };
   
@@ -438,23 +472,43 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
                         <label htmlFor="name" className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Nome</label>
                         <input type="text" name="name" id="name" value={recipe.name} onChange={handleInputChange} className={inputFieldClasses} placeholder="Bolo de Chocolate"/>
                     </div>
-                    <div className="flex gap-2">
-                        <div className="flex-grow">
-                            <label htmlFor="yieldAmount" className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Rendimento Bruto</label>
-                            <input type="number" name="yieldAmount" id="yieldAmount" value={recipe.yieldAmount || ''} onChange={handleInputChange} className={inputFieldClasses} placeholder="1000" min="0"/>
-                             <p className="text-xs text-brand-light-text dark:text-gray-500 mt-1">Soma dos ingredientes. Pode ser editado.</p>
+                    {type === 'recipe' ? (
+                        <div className="flex gap-2">
+                            <div className="flex-grow">
+                                <label htmlFor="yieldAmount" className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Rendimento</label>
+                                <input type="number" name="yieldAmount" id="yieldAmount" value={recipe.yieldAmount || ''} onChange={handleInputChange} className={inputFieldClasses} placeholder="10" min="0" step="any"/>
+                            </div>
+                            <div>
+                                <label htmlFor="yieldUnit" className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Unidade</label>
+                                <input type="text" name="yieldUnit" id="yieldUnit" value={recipe.yieldUnit} onChange={handleInputChange} className={inputFieldClasses} placeholder="Fatias"/>
+                            </div>
                         </div>
-                        <div>
-                            <label htmlFor="yieldUnit" className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Unidade</label>
-                            <select name="yieldUnit" id="yieldUnit" value={recipe.yieldUnit} onChange={handleInputChange} className={selectFieldClasses}>
-                                <option value="g">g</option>
-                                <option value="kg">kg</option>
-                                <option value="ml">ml</option>
-                                <option value="l">l</option>
-                                <option value="un">un</option>
-                            </select>
+                    ) : (
+                        <div className="flex gap-2">
+                            <div className="flex-grow">
+                                <label htmlFor="yieldAmount" className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Rendimento</label>
+                                <input 
+                                    type="number" 
+                                    name="yieldAmount" 
+                                    id="yieldAmount" 
+                                    value={recipe.yieldAmount || ''} 
+                                    onChange={handleInputChange}
+                                    className={inputFieldClasses} 
+                                    placeholder="0"
+                                    step="any"
+                                />
+                            </div>
+                            <div>
+                                <label htmlFor="yieldUnit" className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Unidade</label>
+                                <select name="yieldUnit" id="yieldUnit" value={recipe.yieldUnit} onChange={handleInputChange} className={selectFieldClasses}>
+                                    <option value="g">g</option>
+                                    <option value="kg">kg</option>
+                                    <option value="ml">ml</option>
+                                    <option value="l">l</option>
+                                </select>
+                            </div>
                         </div>
-                    </div>
+                    )}
                 </div>
             </div>
 
@@ -496,7 +550,7 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
                                 </div>
                                 <div className="flex-grow">
                                     <label className="text-xs text-brand-light-text dark:text-gray-400">Qtd.</label>
-                                    <input type="number" value={ing.amount || ''} onChange={(e) => updateIngredient(section.id, ing.id, 'amount', parseFloat(e.target.value) || 0)} className={inputFieldClasses} min="0" />
+                                    <input type="number" value={ing.amount || ''} onChange={(e) => updateIngredient(section.id, ing.id, 'amount', parseFloat(e.target.value) || 0)} className={inputFieldClasses} min="0" step="any" />
                                 </div>
                                 <div className="flex items-end gap-2">
                                     <div className="flex-grow">
@@ -527,7 +581,7 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
                 </div>
                 <div className="space-y-2">
                     {recipe.packaging.map(pkg => (
-                         <div key={pkg.id} className="grid grid-cols-1 md:grid-cols-3 gap-2 items-end">
+                        <div key={pkg.id} className="grid grid-cols-1 md:grid-cols-3 gap-2 items-end">
                             <div className="md:col-span-2">
                                 <label className="text-xs text-brand-light-text dark:text-gray-400">Embalagem</label>
                                 <select value={pkg.packagingId} onChange={(e) => updatePackaging(pkg.id, 'packagingId', e.target.value)} className={selectFieldClasses}>
@@ -537,19 +591,19 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
                             <div className="flex items-end gap-2">
                                 <div className="flex-grow">
                                     <label className="text-xs text-brand-light-text dark:text-gray-400">Qtd.</label>
-                                    <input type="number" value={pkg.amount || ''} onChange={(e) => updatePackaging(pkg.id, 'amount', parseFloat(e.target.value) || 0)} className={inputFieldClasses} min="0" />
+                                    <input type="number" value={pkg.amount || ''} onChange={(e) => updatePackaging(pkg.id, 'amount', parseFloat(e.target.value) || 0)} className={inputFieldClasses} min="0" step="any" />
                                 </div>
                                 <button type="button" onClick={() => triggerRemovePackaging(pkg)} className="text-rose-400 hover:text-brand-primary p-2 rounded-full hover:bg-rose-100 dark:hover:bg-gray-600"><TrashIcon className="w-5 h-5" /></button>
                             </div>
                         </div>
                     ))}
-                     {packagingItems.length === 0 && recipe.packaging.length === 0 && <p className="text-center text-brand-light-text dark:text-gray-400 italic py-2">Cadastre uma embalagem primeiro.</p>}
+                    {packagingItems.length === 0 && recipe.packaging.length === 0 && <p className="text-center text-brand-light-text dark:text-gray-400 italic py-2">Cadastre uma embalagem primeiro.</p>}
                 </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8 relative z-20">
                 <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700 space-y-4">
-                    <h2 className="font-display text-2xl text-brand-text dark:text-rose-100">Ajustes de Produção</h2>
+                    <h2 className="font-display text-2xl text-brand-text dark:text-rose-100">{type === 'recipe' ? 'Custos de Produção e Venda' : 'Ajustes de Produção'}</h2>
                      <TimeInput 
                         label="Horas de Trabalho"
                         totalMinutes={recipe.laborMinutes}
@@ -568,31 +622,70 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
                         onMinutesChange={(m) => handleMinutesChange('gasUsageMinutes', m)}
                         cost={calculatedCosts.gasCost}
                      />
-                    <div>
-                        <label className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Porcentagem de Evaporação (%)</label>
-                        <input type="number" name="evaporationPercentage" value={recipe.evaporationPercentage || ''} onChange={handleInputChange} className={inputFieldClasses} placeholder="10" min="0" />
-                         <p className="text-xs text-brand-light-text dark:text-gray-500 mt-1">Percentual de perda de peso durante o cozimento/preparo.</p>
-                    </div>
+                    {type === 'filling' && (
+                        <div>
+                            <label className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Porcentagem de Evaporação (%)</label>
+                            <input type="number" name="evaporationPercentage" value={recipe.evaporationPercentage || ''} onChange={handleInputChange} className={inputFieldClasses} placeholder="10" min="0" step="any" />
+                            <p className="text-xs text-brand-light-text dark:text-gray-500 mt-1">Percentual de perda de peso durante o cozimento/preparo.</p>
+                        </div>
+                    )}
+                    {type === 'recipe' && (
+                      <>
+                        <div>
+                            <label className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Custos Variáveis (%)</label>
+                            <input type="number" name="variableCostsPercentage" value={recipe.variableCostsPercentage || ''} onChange={handleInputChange} className={inputFieldClasses} placeholder="10" min="0" step="any" />
+                            <p className="text-xs text-brand-light-text dark:text-gray-500 mt-1">Ex: Taxas de cartão/delivery, comissões. Aplicado sobre o custo total com impostos.</p>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Margem de Lucro Desejada (%)</label>
+                            <input type="number" name="profitMargin" value={recipe.profitMargin || ''} onChange={handleInputChange} className={inputFieldClasses} placeholder="30" min="0" step="any" />
+                            <p className="text-xs text-brand-light-text dark:text-gray-500 mt-1">Sua margem de lucro sobre o preço de venda final.</p>
+                        </div>
+                      </>
+                    )}
                 </div>
                 <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700 space-y-3 text-center">
                     <h2 className="font-display text-2xl text-brand-text dark:text-rose-100">Resultado Final</h2>
-                    <div className="p-4 bg-rose-50 dark:bg-gray-700/50 rounded-lg">
-                        <p className="text-sm text-brand-light-text dark:text-gray-400">Custo Total da Receita</p>
-                        <p className="text-3xl font-bold text-brand-text dark:text-rose-100">{formatCurrency(calculatedCosts.totalCost)}</p>
-                    </div>
-                    <div className="p-4 bg-blue-50 dark:bg-blue-900/50 rounded-lg">
-                        <p className="text-sm text-blue-700 dark:text-blue-300">Rendimento Líquido (com perdas)</p>
-                        <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{calculatedCosts.netYieldAmount.toFixed(2)} {recipe.yieldUnit}</p>
-                    </div>
-                    <div className="p-4 bg-green-50 dark:bg-green-900/50 rounded-lg">
-                        <p className="text-sm text-green-700 dark:text-green-300">Preço por Kg</p>
-                        <p className="text-4xl font-bold text-green-600 dark:text-green-400">
-                           { (recipe.yieldUnit.toLowerCase().includes('g') || recipe.yieldUnit.toLowerCase().includes('kg'))
-                             ? formatCurrency(calculatedCosts.pricePerKg)
-                             : <span className="text-lg italic text-gray-500 flex items-center justify-center gap-2"><InformationCircleIcon className="w-5 h-5"/> Mude a unidade do rendimento para 'g' ou 'kg'</span>
-                           }
-                        </p>
-                    </div>
+                    {type === 'recipe' ? (
+                        <div className="space-y-3">
+                            <div className="p-4 bg-rose-50 dark:bg-gray-700/50 rounded-lg">
+                                <p className="text-sm text-brand-light-text dark:text-gray-400">Custo Total da Receita (c/ impostos)</p>
+                                <p className="text-3xl font-bold text-brand-text dark:text-rose-100">{formatCurrency(calculatedCosts.totalCost)}</p>
+                            </div>
+                            <div className="p-4 bg-green-50 dark:bg-green-900/50 rounded-lg">
+                                <p className="text-sm text-green-700 dark:text-green-300">Preço de Venda Sugerido</p>
+                                <p className="text-4xl font-bold text-green-600 dark:text-green-400">{formatCurrency(calculatedCosts.finalSalePrice)}</p>
+                            </div>
+                            <div className="p-4 bg-blue-50 dark:bg-blue-900/50 rounded-lg">
+                                <p className="text-sm text-blue-700 dark:text-blue-300">Preço por {recipe.yieldUnit}</p>
+                                <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{formatCurrency(calculatedCosts.salePricePerUnit)}</p>
+                            </div>
+                            <div className="p-4 bg-purple-50 dark:bg-purple-900/50 rounded-lg">
+                                <p className="text-sm text-purple-700 dark:text-purple-300">Lucro Bruto (Total)</p>
+                                <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">{formatCurrency(calculatedCosts.profitValue)}</p>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="space-y-3">
+                            <div className="p-4 bg-rose-50 dark:bg-gray-700/50 rounded-lg">
+                                <p className="text-sm text-brand-light-text dark:text-gray-400">Custo Total do Recheio</p>
+                                <p className="text-3xl font-bold text-brand-text dark:text-rose-100">{formatCurrency(calculatedCosts.totalCost)}</p>
+                            </div>
+                            <div className="p-4 bg-blue-50 dark:bg-blue-900/50 rounded-lg">
+                                <p className="text-sm text-blue-700 dark:text-blue-300">Rendimento Líquido (com perdas)</p>
+                                <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{calculatedCosts.netYieldAmount.toFixed(2)} {recipe.yieldUnit}</p>
+                            </div>
+                            <div className="p-4 bg-green-50 dark:bg-green-900/50 rounded-lg">
+                                <p className="text-sm text-green-700 dark:text-green-300">Preço por Kg</p>
+                                <p className="text-4xl font-bold text-green-600 dark:text-green-400">
+                                  { (recipe.yieldUnit.toLowerCase().includes('g') || recipe.yieldUnit.toLowerCase().includes('kg'))
+                                    ? formatCurrency(calculatedCosts.pricePerKg)
+                                    : <span className="text-lg italic text-gray-500 flex items-center justify-center gap-2"><InformationCircleIcon className="w-5 h-5"/> Mude a unidade do rendimento para 'g' ou 'kg'</span>
+                                  }
+                                </p>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
 

@@ -61,7 +61,7 @@ export const calculateCosts = (
         const divisor = 1 - taxRate;
         totalCost = divisor > 0 && isFinite(baseCost) ? baseCost / divisor : baseCost;
         if (isFinite(totalCost)) {
-          taxValue = totalCost * taxRate;
+          taxValue = totalCost - baseCost;
         }
     }
     
@@ -72,6 +72,28 @@ export const calculateCosts = (
     if ((yieldUnit.includes('g') || yieldUnit.includes('kg')) && netYieldAmount > 0) {
         const yieldInKg = yieldUnit.includes('kg') ? netYieldAmount : netYieldAmount / 1000;
         pricePerKg = isFinite(totalCost) && yieldInKg > 0 ? totalCost / yieldInKg : 0;
+    }
+
+    let finalSalePrice = 0;
+    let salePricePerUnit = 0;
+    let profitValue = 0;
+    let costWithVariable = 0;
+
+    if (type === 'recipe') {
+        const variableCostsRate = (recipe.variableCostsPercentage || 0) / 100;
+        const profitMarginRate = (recipe.profitMargin || 0) / 100;
+        
+        const costWithVariableDivisor = 1 - variableCostsRate;
+        costWithVariable = costWithVariableDivisor > 0 ? totalCost / costWithVariableDivisor : totalCost;
+
+        const finalSalePriceDivisor = 1 - profitMarginRate;
+        finalSalePrice = finalSalePriceDivisor > 0 ? costWithVariable / finalSalePriceDivisor : costWithVariable;
+        
+        if (netYieldAmount > 0) {
+          salePricePerUnit = finalSalePrice / netYieldAmount;
+        }
+        
+        profitValue = finalSalePrice - totalCost;
     }
 
     return { 
@@ -85,6 +107,10 @@ export const calculateCosts = (
         totalCost,
         netYieldAmount,
         pricePerKg,
+        finalSalePrice,
+        salePricePerUnit,
+        profitValue,
+        costWithVariable,
     };
 }
 

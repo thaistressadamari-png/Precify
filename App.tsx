@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import type { Ingredient, Packaging, Recipe, AppSettings, Page } from './types';
+import React, { useState, useEffect, useMemo } from 'react';
+import type { Ingredient, Packaging, Recipe, AppSettings, Page, Unit } from './types';
 import { IngredientManager } from './components/IngredientManager';
 import { PackagingManager } from './components/PackagingManager';
 import { Settings } from './components/Settings';
@@ -19,6 +19,7 @@ import { BoxIcon } from './components/icons/BoxIcon';
 import { BookOpenIcon } from './components/icons/BookOpenIcon';
 import { AdjustmentsHorizontalIcon } from './components/icons/AdjustmentsHorizontalIcon';
 import { FireIcon } from './components/icons/FireIcon';
+import { calculateCosts } from './components/costCalculator';
 
 const usePersistentState = <T,>(key: string, defaultValue: T): [T, React.Dispatch<React.SetStateAction<T>>] => {
   const [state, setState] = useState<T>(() => {
@@ -80,6 +81,23 @@ const App: React.FC = () => {
   const [highlightedIngredientId, setHighlightedIngredientId] = useState<string | null>(null);
   const [packagingToEdit, setPackagingToEdit] = useState<Packaging | null>(null);
   const [isDarkMode, setIsDarkMode] = useDarkMode();
+
+  const ingredientsWithFillings = useMemo(() => {
+    const fillingsAsIngredients: Ingredient[] = fillings
+      .filter(f => calculateCosts(f, ingredients, packaging, settings, 'filling').netYieldAmount > 0)
+      .map(filling => {
+        const costs = calculateCosts(filling, ingredients, packaging, settings, 'filling');
+        return {
+            id: `filling-${filling.id}`,
+            name: `${filling.name} (Recheio)`,
+            packagePrice: costs.totalCost,
+            packageAmount: costs.netYieldAmount,
+            unit: filling.yieldUnit as Unit,
+            history: [],
+        };
+    });
+    return [...ingredients, ...fillingsAsIngredients];
+  }, [ingredients, fillings, packaging, settings]);
 
   useEffect(() => {
     // One-time data migration for ingredients to ensure each purchase has a unit.
@@ -239,6 +257,7 @@ const App: React.FC = () => {
         return <Dashboard 
           ingredients={ingredients} 
           recipes={recipes} 
+          fillings={fillings}
           packaging={packaging} 
           settings={settings} 
           setPage={setPage} 
@@ -262,7 +281,7 @@ const App: React.FC = () => {
         return <Recipes 
             recipes={recipes} type="recipe" onAddNew={handleAddNewRecipe} onEdit={handleEditRecipe} 
             onDelete={handleDeleteRecipe} onViewDetails={handleViewRecipeDetails}
-            ingredients={ingredients} packagingItems={packaging} settings={settings} onImport={setRecipes}
+            ingredients={ingredientsWithFillings} packagingItems={packaging} settings={settings} onImport={setRecipes}
         />;
       case 'fillings':
         return <Recipes 
@@ -274,12 +293,12 @@ const App: React.FC = () => {
         return <Settings settings={settings} onUpdateSettings={setSettings} />;
       case 'recipe-pricer':
         return <RecipePricer 
-            ingredients={ingredients} packagingItems={packaging} settings={settings} type="recipe"
+            ingredients={ingredientsWithFillings} packagingItems={packaging} settings={settings} type="recipe"
             onSave={handleSaveRecipe} onCancel={handleCancelRecipePricer} recipeToEdit={recipeToEdit}
         />;
        case 'recipe-details':
         return recipeToView ? <RecipeDetails 
-            recipe={recipeToView} type="recipe" ingredients={ingredients} packagingItems={packaging} settings={settings}
+            recipe={recipeToView} type="recipe" ingredients={ingredientsWithFillings} packagingItems={packaging} settings={settings}
             onEdit={handleEditRecipe} onDelete={handleDeleteRecipe} onClose={() => setPage('recipes')}
         /> : null;
       case 'filling-pricer':

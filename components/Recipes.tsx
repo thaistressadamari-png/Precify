@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef } from 'react';
 import type { Recipe, Ingredient, Packaging, AppSettings } from '../types';
 import { PlusIcon } from './icons/PlusIcon';
@@ -175,27 +176,27 @@ export const Recipes: React.FC<RecipesProps> = ({ recipes, onAddNew, onEdit, onD
                                           <span className="font-mono font-semibold text-brand-text dark:text-gray-200">{formatCurrency(recipe.totalCost)}</span>
                                       </div>
                                       <div className="flex justify-between">
-                                          <span className="text-brand-light-text dark:text-gray-400">Rendimento Líquido:</span>
-                                          <span className="font-mono font-semibold text-brand-text dark:text-gray-200">{recipe.netYieldAmount.toFixed(2)} {recipe.yieldUnit}</span>
+                                          <span className="text-brand-light-text dark:text-gray-400">Venda Total:</span>
+                                          <span className="font-mono font-semibold text-brand-text dark:text-gray-200">{formatCurrency(recipe.finalSalePrice)}</span>
                                       </div>
                                       <div className="flex justify-between">
-                                          <span className="font-bold text-green-600 dark:text-green-400">Preço / Kg:</span>
-                                          <span className="font-mono font-bold text-lg text-green-600 dark:text-green-400">{formatCurrency(recipe.pricePerKg)}</span>
+                                          <span className="font-bold text-green-600 dark:text-green-400">Preço / Unidade:</span>
+                                          <span className="font-mono font-bold text-lg text-green-600 dark:text-green-400">{formatCurrency(recipe.salePricePerUnit)}</span>
                                       </div>
                                     </>
                                   ) : (
                                     <>
                                       <div className="flex justify-between">
-                                          <span className="text-brand-light-text dark:text-gray-400">Custo Ingredientes:</span>
-                                          <span className="font-mono font-semibold text-brand-text dark:text-gray-200">{formatCurrency(recipe.ingredientsCost)}</span>
+                                          <span className="text-brand-light-text dark:text-gray-400">Rendimento Líquido:</span>
+                                          <span className="font-mono font-semibold text-brand-text dark:text-gray-200">{recipe.netYieldAmount.toFixed(2)} {recipe.yieldUnit}</span>
                                       </div>
                                       <div className="flex justify-between">
-                                          <span className="text-blue-600 dark:text-blue-400">Preço / Kg:</span>
-                                          <span className="font-mono font-semibold text-blue-600 dark:text-blue-400">{formatCurrency(recipe.pricePerKg)}</span>
+                                          <span className="text-brand-light-text dark:text-gray-400">Custo Total:</span>
+                                          <span className="font-mono font-semibold text-brand-text dark:text-gray-200">{formatCurrency(recipe.totalCost)}</span>
                                       </div>
                                       <div className="flex justify-between">
-                                          <span className="font-bold text-green-600 dark:text-green-400">Custo Total:</span>
-                                          <span className="font-mono font-bold text-lg text-green-600 dark:text-green-400">{formatCurrency(recipe.totalCost)}</span>
+                                          <span className="font-bold text-green-600 dark:text-green-400">Preço / Kg:</span>
+                                          <span className="font-mono font-bold text-lg text-green-600 dark:text-green-400">{formatCurrency(recipe.pricePerKg)}</span>
                                       </div>
                                     </>
                                   )}
