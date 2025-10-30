@@ -16,26 +16,25 @@ interface DashboardProps {
   packaging: Packaging[];
   settings: AppSettings;
   setPage: (page: Page) => void;
-  onGoToEdit: (recipe: Recipe) => void;
+  onGoToEditRecipe: (recipe: Recipe) => void;
   onGoToEditIngredient: (ingredient: Ingredient) => void;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ ingredients, recipes, packaging, settings, setPage, onGoToEdit, onGoToEditIngredient }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ ingredients, recipes, packaging, settings, setPage, onGoToEditRecipe, onGoToEditIngredient }) => {
 
   const recipesWithCalculatedCosts = useMemo(() => {
     return recipes.map(recipe => ({
       ...recipe,
-      ...calculateCosts(recipe, ingredients, packaging, settings),
+      ...calculateCosts(recipe, ingredients, packaging, settings, 'recipe'),
     }));
   }, [recipes, ingredients, packaging, settings]);
   
-  const topProfitableRecipes = recipesWithCalculatedCosts
-    .sort((a, b) => b.totalProfit - a.totalProfit)
+  const topCostlyRecipes = recipesWithCalculatedCosts
+    .filter(r => r.pricePerKg > 0)
+    .sort((a, b) => b.pricePerKg - a.pricePerKg)
     .slice(0, 5);
     
   const alerts = useMemo(() => {
-    const unprofitableRecipes = recipesWithCalculatedCosts.filter(r => r.totalCost >= r.finalPrice && isFinite(r.totalCost));
-    
     const recipesWithMissingItems = recipes.filter(recipe => {
         const hasMissingIngredient = recipe.ingredientSections?.some(section =>
             section.ingredients.some(
@@ -62,8 +61,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ ingredients, recipes, pack
     });
 
 
-    return { unprofitableRecipes, recipesWithMissingItems: uniqueRecipesWithMissingItems, outdatedIngredients };
-  }, [recipes, ingredients, packaging, recipesWithCalculatedCosts, settings.ingredientOutdatedDays]);
+    return { recipesWithMissingItems: uniqueRecipesWithMissingItems, outdatedIngredients };
+  }, [recipes, ingredients, packaging, settings.ingredientOutdatedDays]);
 
   const StatCard: React.FC<{
     icon: React.ElementType,
@@ -96,7 +95,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ ingredients, recipes, pack
     return <div className={cardClasses}>{cardContent}</div>;
   };
 
-  const hasAlerts = alerts.unprofitableRecipes.length > 0 || alerts.recipesWithMissingItems.length > 0 || alerts.outdatedIngredients.length > 0;
+  const hasAlerts = alerts.recipesWithMissingItems.length > 0 || alerts.outdatedIngredients.length > 0;
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -135,22 +134,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ ingredients, recipes, pack
                 </div>
             ) : (
                 <ul className="space-y-3">
-                    {alerts.unprofitableRecipes.map(recipe => (
-                        <li key={`profit-${recipe.id}`} className="flex items-start gap-3 p-3 bg-rose-50 dark:bg-gray-700/50 rounded-lg border border-rose-200 dark:border-gray-600">
-                            <ExclamationTriangleIcon className="w-6 h-6 text-brand-accent flex-shrink-0 mt-1" />
-                            <div>
-                                <button onClick={() => onGoToEdit(recipe)} className="font-semibold text-brand-text dark:text-rose-100 hover:underline text-left">{recipe.name}</button>
-                                <p className="text-sm text-brand-light-text dark:text-gray-400">
-                                    Não está gerando lucro. Custo ({formatCurrency(recipe.totalCost)}) é maior ou igual ao preço ({formatCurrency(recipe.finalPrice)}).
-                                </p>
-                            </div>
-                        </li>
-                    ))}
                     {alerts.recipesWithMissingItems.map(recipe => (
                         <li key={`missing-${recipe.id}`} className="flex items-start gap-3 p-3 bg-rose-50 dark:bg-gray-700/50 rounded-lg border border-rose-200 dark:border-gray-600">
                             <ExclamationTriangleIcon className="w-6 h-6 text-yellow-500 flex-shrink-0 mt-1" />
                             <div>
-                                <button onClick={() => onGoToEdit(recipe)} className="font-semibold text-brand-text dark:text-rose-100 hover:underline text-left">{recipe.name}</button>
+                                <button onClick={() => onGoToEditRecipe(recipe)} className="font-semibold text-brand-text dark:text-rose-100 hover:underline text-left">{recipe.name}</button>
                                 <p className="text-sm text-brand-light-text dark:text-gray-400">
                                     Contém ingredientes ou embalagens que foram excluídos. O cálculo do custo pode estar incorreto.
                                 </p>
@@ -172,27 +160,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ ingredients, recipes, pack
             )}
         </div>
         <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700 h-full">
-            <h2 className="font-display text-2xl text-brand-text dark:text-rose-100 mb-4">Top 5 Receitas Mais Lucrativas</h2>
-            {topProfitableRecipes.length > 0 ? (
+            <h2 className="font-display text-2xl text-brand-text dark:text-rose-100 mb-4">Top 5 Receitas por Custo (R$/kg)</h2>
+            {topCostlyRecipes.length > 0 ? (
             <ul className="space-y-3">
-                {topProfitableRecipes.map((recipe, index) => (
+                {topCostlyRecipes.map((recipe, index) => (
                 <li key={recipe.id} className="flex justify-between items-center bg-rose-50 dark:bg-gray-700/50 p-4 rounded-lg border border-rose-200 dark:border-gray-600">
                     <div className="flex items-center gap-4">
                     <span className="text-xl font-bold text-brand-accent">#{index + 1}</span>
                     <div>
                             <p className="font-semibold text-brand-text dark:text-gray-200">{recipe.name}</p>
-                            <p className="text-sm text-brand-light-text dark:text-gray-400">Preço de Venda: {formatCurrency(recipe.finalPrice)}</p>
+                            <p className="text-sm text-brand-light-text dark:text-gray-400">Custo Total: {formatCurrency(recipe.totalCost)}</p>
                     </div>
                     </div>
                     <div className="text-right">
-                        <p className="font-bold text-green-600 dark:text-green-400 text-lg">{formatCurrency(recipe.totalProfit)}</p>
-                        <p className="text-sm text-brand-light-text dark:text-gray-400">Lucro Total</p>
+                        <p className="font-bold text-green-600 dark:text-green-400 text-lg">{formatCurrency(recipe.pricePerKg)}</p>
+                        <p className="text-sm text-brand-light-text dark:text-gray-400">Custo por Kg</p>
                     </div>
                 </li>
                 ))}
             </ul>
             ) : (
-            <p className="text-center text-brand-light-text dark:text-gray-400 italic py-4">Nenhuma receita criada ainda.</p>
+            <p className="text-center text-brand-light-text dark:text-gray-400 italic py-4">Nenhuma receita com rendimento em peso (g/kg) para classificar.</p>
             )}
         </div>
       </div>

@@ -23,6 +23,7 @@ interface RecipeDetailsProps {
   onEdit: (recipe: Recipe) => void;
   onDelete: (recipeId: string) => void;
   onClose: () => void;
+  type: 'recipe' | 'filling';
 }
 
 const PieChart: React.FC<{ data: { name: string; value: number; color: string }[] }> = ({ data }) => {
@@ -74,12 +75,12 @@ const PieChart: React.FC<{ data: { name: string; value: number; color: string }[
   );
 };
 
-export const RecipeDetails: React.FC<RecipeDetailsProps> = ({ recipe, ingredients, packagingItems, settings, onEdit, onDelete, onClose }) => {
+export const RecipeDetails: React.FC<RecipeDetailsProps> = ({ recipe, ingredients, packagingItems, settings, onEdit, onDelete, onClose, type }) => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const costBreakdown = useMemo(() => {
-    return calculateCosts(recipe, ingredients, packagingItems, settings);
-  }, [recipe, ingredients, packagingItems, settings]);
+    return calculateCosts(recipe, ingredients, packagingItems, settings, type);
+  }, [recipe, ingredients, packagingItems, settings, type]);
 
   const chartData = useMemo(() => {
     const data = [
@@ -88,7 +89,6 @@ export const RecipeDetails: React.FC<RecipeDetailsProps> = ({ recipe, ingredient
       { name: 'Mão de Obra', value: costBreakdown.laborCost, color: '#60A5FA' },
       { name: 'Energia', value: costBreakdown.energyCost, color: '#FACC15' },
       { name: 'Gás', value: costBreakdown.gasCost, color: '#A78BFA' },
-      { name: 'Custos Adicionais', value: costBreakdown.variableCostsValue, color: '#4ADE80' },
       { name: 'Impostos', value: costBreakdown.taxValue, color: '#9CA3AF' },
     ];
     return data.filter(item => item.value > 0).sort((a, b) => b.value - a.value);
@@ -144,11 +144,9 @@ export const RecipeDetails: React.FC<RecipeDetailsProps> = ({ recipe, ingredient
       });
     });
 
-    const preparoHtml = recipe.preparationMethod?.map(step => `<div>• ${step}</div>`).join('') || '';
+    const preparoHtml = type === 'recipe' && hasPreparationMethod ? recipe.preparationMethod!.map(step => `<div>• ${step}</div>`).join('') : '';
     const observacoesTitle = recipe.observationsTitle || 'OBSERVAÇÕES';
-    const observacoesListHtml = hasObservations 
-        ? recipe.observations!.map(obs => `<div>• ${obs}</div>`).join('')
-        : '';
+    const observacoesListHtml = type === 'recipe' && hasObservations ? recipe.observations!.map(obs => `<div>• ${obs}</div>`).join('') : '';
 
     // Measure content heights in a hidden element
     const measureElement = document.createElement('div');
@@ -166,14 +164,17 @@ export const RecipeDetails: React.FC<RecipeDetailsProps> = ({ recipe, ingredient
     measureElement.appendChild(ingredientsContainer);
     const ingredientsHeight = ingredientsContainer.clientHeight;
     
-    const preparoContainer = document.createElement('div');
-    preparoContainer.style.width = '190px';
-    preparoContainer.innerHTML = `<div style="${titleStyle}">MODO DE PREPARO</div><div style="${baseStyle}">${preparoHtml}</div>`;
-    measureElement.appendChild(preparoContainer);
-    const preparoHeight = preparoContainer.clientHeight;
+    let preparoHeight = 0;
+    if (type === 'recipe' && hasPreparationMethod) {
+      const preparoContainer = document.createElement('div');
+      preparoContainer.style.width = '190px';
+      preparoContainer.innerHTML = `<div style="${titleStyle}">MODO DE PREPARO</div><div style="${baseStyle}">${preparoHtml}</div>`;
+      measureElement.appendChild(preparoContainer);
+      preparoHeight = preparoContainer.clientHeight;
+    }
     
     let observationsHeight = 0;
-    if (hasObservations) {
+    if (type === 'recipe' && hasObservations) {
         const obsContainer = document.createElement('div');
         obsContainer.style.width = '420px';
         obsContainer.innerHTML = `<div style="text-align: center; ${titleStyle}">${observacoesTitle.toUpperCase()}</div><div style="text-align: left; ${baseStyle}">${observacoesListHtml}</div>`;
@@ -183,20 +184,21 @@ export const RecipeDetails: React.FC<RecipeDetailsProps> = ({ recipe, ingredient
     
     document.body.removeChild(measureElement);
 
-    // Calculate dynamic layout
     const cardTop = 143.35;
-    const cardPadding = 25; // Consistent vertical padding
+    const cardPadding = 25;
     const contentTop = cardTop + cardPadding;
 
     const mainContentHeight = Math.max(ingredientsHeight, preparoHeight);
     const contentBottom = contentTop + mainContentHeight;
     
-    const observationsTop = hasObservations ? contentBottom + cardPadding : contentBottom;
-    const finalContentBottom = observationsTop + (hasObservations ? observationsHeight : 0);
+    const observationsTop = type === 'recipe' && hasObservations ? contentBottom + cardPadding : contentBottom;
+    const finalContentBottom = observationsTop + (type === 'recipe' && hasObservations ? observationsHeight : 0);
     const cardBottom = finalContentBottom + cardPadding;
     
     const newCardHeight = cardBottom - cardTop;
     const finalCardHeight = Math.max(401, newCardHeight);
+
+    const preparoSectionWidth = (type === 'recipe' && hasPreparationMethod) ? '190px' : '0px';
 
     const element = document.createElement('div');
     element.innerHTML = `
@@ -224,12 +226,14 @@ export const RecipeDetails: React.FC<RecipeDetailsProps> = ({ recipe, ingredient
             <div style="${titleStyle}">INGREDIENTES</div>
             <div style="${baseStyle}">${ingredientesHtml}</div>
         </div>
-        <div style="position: absolute; left: 321px; top: ${contentTop}px; width: 190px;">
-            <div style="${titleStyle}">MODO DE PREPARO</div>
-            <div style="${baseStyle}">${preparoHtml}</div>
-        </div>
+        ${(type === 'recipe' && hasPreparationMethod) ? `
+          <div style="position: absolute; left: 321px; top: ${contentTop}px; width: ${preparoSectionWidth};">
+              <div style="${titleStyle}">MODO DE PREPARO</div>
+              <div style="${baseStyle}">${preparoHtml}</div>
+          </div>
+        ` : ''}
         
-        ${hasObservations ? `
+        ${(type === 'recipe' && hasObservations) ? `
             <div style="position: absolute; left: 104px; top: ${observationsTop}px; width: 420px;">
                 <div style="text-align: center; ${titleStyle}">${observacoesTitle.toUpperCase()}</div>
                 <div style="text-align: left; ${baseStyle}">${observacoesListHtml}</div>
@@ -260,7 +264,7 @@ export const RecipeDetails: React.FC<RecipeDetailsProps> = ({ recipe, ingredient
       <div className="flex justify-between items-center flex-wrap gap-4">
         <div>
             <h1 className="font-display text-4xl text-brand-text dark:text-rose-100">{recipe.name}</h1>
-            <p className="text-brand-light-text dark:text-gray-400">Rendimento: {recipe.yieldAmount} {recipe.yieldUnit}</p>
+            <p className="text-brand-light-text dark:text-gray-400">Rendimento Bruto: {recipe.yieldAmount} {recipe.yieldUnit}</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <button onClick={onClose} className="flex items-center gap-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-bold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105">
@@ -284,12 +288,12 @@ export const RecipeDetails: React.FC<RecipeDetailsProps> = ({ recipe, ingredient
                 <p className="font-display text-4xl font-bold text-brand-text dark:text-rose-100">{formatCurrency(costBreakdown.totalCost)}</p>
             </div>
              <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700 text-center">
-                <p className="text-sm text-blue-700 dark:text-blue-300">Preço / {recipe.yieldUnit.replace(/s$/, '')}</p>
-                <p className="font-display text-4xl font-bold text-blue-600 dark:text-blue-400">{formatCurrency(costBreakdown.pricePerYieldUnit)}</p>
+                <p className="text-sm text-blue-700 dark:text-blue-300">Rendimento Líquido</p>
+                <p className="font-display text-4xl font-bold text-blue-600 dark:text-blue-400">{costBreakdown.netYieldAmount.toFixed(2)} {recipe.yieldUnit}</p>
             </div>
              <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700 text-center">
-                <p className="text-sm text-green-700 dark:text-green-300">Preço de Venda Sugerido</p>
-                <p className="font-display text-4xl font-bold text-green-600 dark:text-green-400">{formatCurrency(costBreakdown.finalPrice)}</p>
+                <p className="text-sm text-green-700 dark:text-green-300">Preço por Kg</p>
+                <p className="font-display text-4xl font-bold text-green-600 dark:text-green-400">{formatCurrency(costBreakdown.pricePerKg)}</p>
             </div>
       </div>
       
@@ -310,7 +314,7 @@ export const RecipeDetails: React.FC<RecipeDetailsProps> = ({ recipe, ingredient
                     <div className="text-right">
                         <span className="font-semibold text-brand-text dark:text-gray-200">{formatCurrency(item.value)}</span>
                         <span className="ml-2 text-sm font-mono text-gray-500 dark:text-gray-500">
-                          {costBreakdown.totalCost > 0 ? `(${(item.value / costBreakdown.totalCost * 100).toFixed(1)}%)` : '(0.0%)'}
+                          {costBreakdown.baseCost > 0 ? `(${(item.value / costBreakdown.baseCost * 100).toFixed(1)}%)` : '(0.0%)'}
                         </span>
                     </div>
                 </li>
@@ -370,35 +374,33 @@ export const RecipeDetails: React.FC<RecipeDetailsProps> = ({ recipe, ingredient
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {hasPreparationMethod && (
-              <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700">
-                  <h2 className="font-display text-2xl text-brand-text dark:text-rose-100 mb-4">Modo de Preparo</h2>
-                  <ol className="list-decimal list-inside space-y-2 text-brand-light-text dark:text-gray-300">
-                      {recipe.preparationMethod!.map((step, index) => (
-                          <li key={index} className="pl-2 whitespace-pre-wrap">{step}</li>
-                      ))}
-                  </ol>
-              </div>
-          )}
+      {(type === 'recipe' && hasPreparationMethod) && (
+          <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700">
+              <h2 className="font-display text-2xl text-brand-text dark:text-rose-100 mb-4">Modo de Preparo</h2>
+              <ol className="list-decimal list-inside space-y-2 text-brand-light-text dark:text-gray-300">
+                  {recipe.preparationMethod!.map((step, index) => (
+                      <li key={index} className="pl-2 whitespace-pre-wrap">{step}</li>
+                  ))}
+              </ol>
+          </div>
+      )}
 
-          {hasObservations && (
-              <div className={`bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700 ${!hasPreparationMethod && 'md:col-start-1'}`}>
-                  <h2 className="font-display text-2xl text-brand-text dark:text-rose-100 mb-4">{recipe.observationsTitle || 'Observações'}</h2>
-                  <ul className="list-disc list-inside space-y-2 text-brand-light-text dark:text-gray-300">
-                      {recipe.observations!.map((obs, index) => (
-                          <li key={index} className="pl-2 whitespace-pre-wrap">{obs}</li>
-                      ))}
-                  </ul>
-              </div>
-          )}
-      </div>
+      {(type === 'recipe' && hasObservations) && (
+          <div className={`bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700 ${!hasPreparationMethod && 'md:col-start-1'}`}>
+              <h2 className="font-display text-2xl text-brand-text dark:text-rose-100 mb-4">{recipe.observationsTitle || 'Observações'}</h2>
+              <ul className="list-disc list-inside space-y-2 text-brand-light-text dark:text-gray-300">
+                  {recipe.observations!.map((obs, index) => (
+                      <li key={index} className="pl-2 whitespace-pre-wrap">{obs}</li>
+                  ))}
+              </ul>
+          </div>
+      )}
 
     </div>
     <ConfirmModal
         isOpen={showDeleteConfirm}
         title="Confirmar Exclusão"
-        message={`Tem certeza que deseja excluir a receita "${recipe.name}"? Esta ação não pode ser desfeita.`}
+        message={`Tem certeza que deseja excluir "${recipe.name}"? Esta ação não pode ser desfeita.`}
         onConfirm={confirmDelete}
         onCancel={() => setShowDeleteConfirm(false)}
     />

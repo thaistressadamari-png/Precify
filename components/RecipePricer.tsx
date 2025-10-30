@@ -4,8 +4,9 @@ import type { Ingredient, Packaging, Recipe, RecipeIngredient, RecipePackaging, 
 import { PlusIcon } from './icons/PlusIcon';
 import { TrashIcon } from './icons/TrashIcon';
 import { ConfirmModal } from './ConfirmModal';
-import { calculateCosts } from './costCalculator';
+import { calculateCosts, convertToBaseUnitAmount } from './costCalculator';
 import { formatCurrency } from './utils';
+import { InformationCircleIcon } from './icons/InformationCircleIcon';
 
 interface RecipePricerProps {
   ingredients: Ingredient[];
@@ -14,6 +15,7 @@ interface RecipePricerProps {
   onSave: (recipe: Recipe) => void;
   onCancel: () => void;
   recipeToEdit?: Recipe | null;
+  type: 'recipe' | 'filling';
 }
 
 type ItemToDelete = {
@@ -33,13 +35,12 @@ const createEmptyRecipe = (): Omit<Recipe, 'id'>=> ({
   name: '',
   ingredientSections: [createNewSection()],
   packaging: [],
-  yieldAmount: 1,
-  yieldUnit: 'unidade',
+  yieldAmount: 0,
+  yieldUnit: 'g',
   laborMinutes: 0,
   energyUsageMinutes: 0,
   gasUsageMinutes: 0,
-  variableCostsPercentage: 0,
-  profitMargin: 100,
+  evaporationPercentage: 0,
   preparationMethod: [''],
   observationsTitle: 'Observações',
   observations: [''],
@@ -48,7 +49,6 @@ const createEmptyRecipe = (): Omit<Recipe, 'id'>=> ({
 const inputFieldClasses = "mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 dark:text-gray-200 border border-rose-200 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-secondary focus:border-brand-secondary";
 const selectFieldClasses = `${inputFieldClasses} pr-8`;
 
-// Componentes foram movidos para fora da função RecipePricer para otimização
 const SearchableIngredientSelect: React.FC<{
     ingredients: Ingredient[];
     currentIngredientId: string;
@@ -170,32 +170,59 @@ const TimeInput: React.FC<{
 };
 
 
-export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagingItems, settings, onSave, onCancel, recipeToEdit }) => {
+export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagingItems, settings, onSave, onCancel, recipeToEdit, type }) => {
   const [recipe, setRecipe] = useState<Omit<Recipe, 'id'>>(createEmptyRecipe());
   const [itemToDelete, setItemToDelete] = useState<ItemToDelete | null>(null);
+  const [isYieldManual, setIsYieldManual] = useState(!!recipeToEdit);
 
   useEffect(() => {
     const initialData = recipeToEdit 
         ? JSON.parse(JSON.stringify(recipeToEdit))
         : createEmptyRecipe();
+    
+    if (initialData.evaporationPercentage === undefined) {
+      initialData.evaporationPercentage = 0;
+    }
 
-    if (!initialData.preparationMethod || initialData.preparationMethod.length === 0) {
-        initialData.preparationMethod = [''];
-    }
-    if (!initialData.observations || initialData.observations.length === 0) {
-        initialData.observations = [''];
-    }
-     if (!initialData.observationsTitle) {
-        initialData.observationsTitle = 'Observações';
+    if (type === 'recipe') {
+      if (!initialData.preparationMethod || initialData.preparationMethod.length === 0) {
+          initialData.preparationMethod = [''];
+      }
+      if (!initialData.observations || initialData.observations.length === 0) {
+          initialData.observations = [''];
+      }
+      if (!initialData.observationsTitle) {
+          initialData.observationsTitle = 'Observações';
+      }
     }
 
     setRecipe(initialData);
-  }, [recipeToEdit]);
+  }, [recipeToEdit, type]);
+  
+  const grossYield = useMemo(() => {
+    return recipe.ingredientSections.flatMap(s => s.ingredients).reduce((sum, ing) => {
+        if (!ing.amount || !ing.unit) return sum;
+        // Only sum weight and volume units for a sensible total yield
+        if (['g', 'kg', 'ml', 'l'].includes(ing.unit)) {
+            return sum + convertToBaseUnitAmount(ing.amount, ing.unit);
+        }
+        return sum;
+    }, 0);
+  }, [recipe.ingredientSections]);
+
+  useEffect(() => {
+      if (!isYieldManual && !recipeToEdit) { // Auto-update only for new recipes not manually edited
+          setRecipe(prev => ({...prev, yieldAmount: grossYield}));
+      }
+  }, [grossYield, isYieldManual, recipeToEdit]);
 
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    const isNumber = ['yieldAmount', 'variableCostsPercentage', 'profitMargin'].includes(name);
+    if (name === 'yieldAmount') {
+      setIsYieldManual(true);
+    }
+    const isNumber = ['yieldAmount', 'evaporationPercentage'].includes(name);
     setRecipe(prev => ({ ...prev, [name]: isNumber ? parseFloat(value) || 0 : value } as any));
   };
   
@@ -345,20 +372,15 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
   };
 
   const calculatedCosts = useMemo(() => {
-    return calculateCosts(recipe, ingredients, packagingItems, settings);
-  }, [recipe, ingredients, packagingItems, settings]);
+    return calculateCosts(recipe, ingredients, packagingItems, settings, type);
+  }, [recipe, ingredients, packagingItems, settings, type]);
 
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if(!recipe.name || recipe.yieldAmount <= 0) {
-        alert("Por favor, preencha o nome da receita e o rendimento.");
+        alert("Por favor, preencha o nome e o rendimento (maior que zero).");
         return;
-    }
-
-    if (!isFinite(calculatedCosts.totalCost) || !isFinite(calculatedCosts.finalPrice)) {
-      alert(`O Custo Total ou Preço Final não pôde ser calculado. Isso geralmente ocorre quando a soma de 'Custos Variáveis (%)' com impostos (${settings.taxPercentage}%) é igual ou maior que 100%. Por favor, ajuste este valor.`);
-      return;
     }
 
     const recipeToSave: Recipe = {
@@ -366,6 +388,8 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
       ...recipe,
       preparationMethod: recipe.preparationMethod?.filter(item => item.trim() !== ''),
       observations: recipe.observations?.filter(item => item.trim() !== ''),
+      variableCostsPercentage: undefined,
+      profitMargin: undefined,
     };
     onSave(recipeToSave);
   };
@@ -376,26 +400,33 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
         case 'section':
             return `Tem certeza que deseja remover a seção "${itemToDelete.name}" e todos os seus ingredientes?`;
         case 'ingredient':
-            return `Tem certeza que deseja remover o ingrediente "${itemToDelete.name}" da receita?`;
+            return `Tem certeza que deseja remover o ingrediente "${itemToDelete.name}"?`;
         case 'packaging':
-            return `Tem certeza que deseja remover a embalagem "${itemToDelete.name}" da receita?`;
+            return `Tem certeza que deseja remover a embalagem "${itemToDelete.name}"?`;
         default:
             return "Tem certeza?";
     }
   };
+
+  const title = type === 'recipe' 
+    ? (recipeToEdit ? 'Editar Receita' : 'Nova Receita')
+    : (recipeToEdit ? 'Editar Recheio' : 'Novo Recheio');
+  
+  const saveButtonLabel = type === 'recipe' ? 'Salvar Receita' : 'Salvar Recheio';
+
 
   return (
     <>
     <div className="space-y-8 animate-fade-in">
         <form onSubmit={handleSubmit}>
             <div className="flex justify-between items-center mb-8 flex-wrap gap-4">
-                <h1 className="font-display text-4xl text-brand-text dark:text-rose-100">{recipeToEdit ? 'Editar Receita' : 'Nova Receita'}</h1>
+                <h1 className="font-display text-4xl text-brand-text dark:text-rose-100">{title}</h1>
                 <div className="flex gap-2">
                     <button type="button" onClick={onCancel} className="bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-bold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105">
                         Cancelar
                     </button>
                     <button type="submit" className="bg-brand-primary hover:bg-rose-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105">
-                        Salvar Receita
+                        {saveButtonLabel}
                     </button>
                 </div>
             </div>
@@ -404,17 +435,24 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
                 <h2 className="font-display text-2xl text-brand-text dark:text-rose-100 mb-4">Informações Gerais</h2>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="md:col-span-2">
-                        <label htmlFor="name" className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Nome da Receita</label>
+                        <label htmlFor="name" className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Nome</label>
                         <input type="text" name="name" id="name" value={recipe.name} onChange={handleInputChange} className={inputFieldClasses} placeholder="Bolo de Chocolate"/>
                     </div>
                     <div className="flex gap-2">
                         <div className="flex-grow">
-                            <label htmlFor="yieldAmount" className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Rendimento</label>
-                            <input type="number" name="yieldAmount" id="yieldAmount" value={recipe.yieldAmount || ''} onChange={handleInputChange} className={inputFieldClasses} placeholder="10" min="0"/>
+                            <label htmlFor="yieldAmount" className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Rendimento Bruto</label>
+                            <input type="number" name="yieldAmount" id="yieldAmount" value={recipe.yieldAmount || ''} onChange={handleInputChange} className={inputFieldClasses} placeholder="1000" min="0"/>
+                             <p className="text-xs text-brand-light-text dark:text-gray-500 mt-1">Soma dos ingredientes. Pode ser editado.</p>
                         </div>
                         <div>
                             <label htmlFor="yieldUnit" className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Unidade</label>
-                            <input type="text" name="yieldUnit" id="yieldUnit" value={recipe.yieldUnit} onChange={handleInputChange} className={inputFieldClasses} placeholder="fatias"/>
+                            <select name="yieldUnit" id="yieldUnit" value={recipe.yieldUnit} onChange={handleInputChange} className={selectFieldClasses}>
+                                <option value="g">g</option>
+                                <option value="kg">kg</option>
+                                <option value="ml">ml</option>
+                                <option value="l">l</option>
+                                <option value="un">un</option>
+                            </select>
                         </div>
                     </div>
                 </div>
@@ -511,7 +549,7 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8 relative z-20">
                 <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700 space-y-4">
-                    <h2 className="font-display text-2xl text-brand-text dark:text-rose-100">Custos e Preço</h2>
+                    <h2 className="font-display text-2xl text-brand-text dark:text-rose-100">Ajustes de Produção</h2>
                      <TimeInput 
                         label="Horas de Trabalho"
                         totalMinutes={recipe.laborMinutes}
@@ -531,14 +569,9 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
                         cost={calculatedCosts.gasCost}
                      />
                     <div>
-                        <label className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Custos Variáveis (%)</label>
-                        <input type="number" name="variableCostsPercentage" value={recipe.variableCostsPercentage || ''} onChange={handleInputChange} className={inputFieldClasses} placeholder="5" min="0" />
-                         <p className="text-xs text-brand-light-text dark:text-gray-500 mt-1">Ex: comissões, taxas de cartão.</p>
-                    </div>
-                     <div>
-                        <label className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Margem de Lucro (%)</label>
-                        <input type="number" name="profitMargin" value={recipe.profitMargin || ''} onChange={handleInputChange} className={inputFieldClasses} placeholder="100" min="0" />
-                         <p className="text-xs text-brand-light-text dark:text-gray-500 mt-1">O lucro será calculado sobre o custo total (incluindo variáveis e impostos).</p>
+                        <label className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Porcentagem de Evaporação (%)</label>
+                        <input type="number" name="evaporationPercentage" value={recipe.evaporationPercentage || ''} onChange={handleInputChange} className={inputFieldClasses} placeholder="10" min="0" />
+                         <p className="text-xs text-brand-light-text dark:text-gray-500 mt-1">Percentual de perda de peso durante o cozimento/preparo.</p>
                     </div>
                 </div>
                 <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700 space-y-3 text-center">
@@ -547,90 +580,97 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
                         <p className="text-sm text-brand-light-text dark:text-gray-400">Custo Total da Receita</p>
                         <p className="text-3xl font-bold text-brand-text dark:text-rose-100">{formatCurrency(calculatedCosts.totalCost)}</p>
                     </div>
-                    <div className="p-4 bg-green-50 dark:bg-green-900/50 rounded-lg">
-                        <p className="text-sm text-green-700 dark:text-green-300">Preço Final de Venda</p>
-                        <p className="text-4xl font-bold text-green-600 dark:text-green-400">{formatCurrency(calculatedCosts.finalPrice)}</p>
+                    <div className="p-4 bg-blue-50 dark:bg-blue-900/50 rounded-lg">
+                        <p className="text-sm text-blue-700 dark:text-blue-300">Rendimento Líquido (com perdas)</p>
+                        <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{calculatedCosts.netYieldAmount.toFixed(2)} {recipe.yieldUnit}</p>
                     </div>
-                     <div className="p-4 bg-blue-50 dark:bg-blue-900/50 rounded-lg">
-                        <p className="text-sm text-blue-700 dark:text-blue-300">Preço por {recipe.yieldUnit.replace(/s$/, '') || 'unidade'}</p>
-                        <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{formatCurrency(calculatedCosts.pricePerYieldUnit)}</p>
+                    <div className="p-4 bg-green-50 dark:bg-green-900/50 rounded-lg">
+                        <p className="text-sm text-green-700 dark:text-green-300">Preço por Kg</p>
+                        <p className="text-4xl font-bold text-green-600 dark:text-green-400">
+                           { (recipe.yieldUnit.toLowerCase().includes('g') || recipe.yieldUnit.toLowerCase().includes('kg'))
+                             ? formatCurrency(calculatedCosts.pricePerKg)
+                             : <span className="text-lg italic text-gray-500 flex items-center justify-center gap-2"><InformationCircleIcon className="w-5 h-5"/> Mude a unidade do rendimento para 'g' ou 'kg'</span>
+                           }
+                        </p>
                     </div>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 relative z-10">
-                <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700 space-y-4">
-                    <h2 className="font-display text-2xl text-brand-text dark:text-rose-100">Modo de Preparo</h2>
-                    <div className="space-y-2">
-                        {recipe.preparationMethod?.map((step, index) => (
-                            <div key={index} className="flex items-start gap-2">
-                                <span className="pt-3 text-brand-light-text dark:text-gray-400 font-semibold">{index + 1}.</span>
-                                <textarea 
-                                    value={step} 
-                                    onChange={(e) => handleListChange('preparationMethod', index, e.target.value)}
-                                    className={`${inputFieldClasses} resize-y min-h-[42px]`}
-                                    placeholder="Ex: Misture os ingredientes secos..."
-                                    rows={1}
-                                />
-                                <button 
-                                    type="button" 
-                                    onClick={() => removeListItem('preparationMethod', index)} 
-                                    className="text-rose-400 hover:text-brand-primary p-2 mt-1 rounded-full hover:bg-rose-100 dark:hover:bg-gray-600 disabled:opacity-50"
-                                    disabled={recipe.preparationMethod!.length <= 1 && step === ''}
-                                >
-                                    <TrashIcon className="w-5 h-5" />
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                    <button 
-                        type="button" 
-                        onClick={() => addListItem('preparationMethod')}
-                        className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-rose-200 dark:border-gray-500 text-brand-light-text dark:text-gray-400 hover:bg-rose-50 dark:hover:bg-gray-700/50 hover:border-brand-secondary text-sm py-2 px-3 rounded-lg transition-colors"
-                    >
-                        <PlusIcon className="w-4 h-4" /> Adicionar Passo
-                    </button>
-                </div>
-                
-                <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700 space-y-4">
-                    <input 
-                        type="text"
-                        value={recipe.observationsTitle || ''}
-                        onChange={e => setRecipe(prev => ({...prev, observationsTitle: e.target.value}))}
-                        className="font-display text-2xl text-brand-text dark:text-rose-100 bg-transparent border-b-2 border-transparent focus:border-brand-secondary focus:outline-none transition-colors w-full"
-                        placeholder="Título da Seção"
-                    />
-                    <div className="space-y-2">
-                        {recipe.observations?.map((obs, index) => (
-                            <div key={index} className="flex items-start gap-2">
-                                <span className="pt-3 text-brand-light-text dark:text-gray-400 font-semibold">•</span>
-                                <textarea 
-                                    value={obs} 
-                                    onChange={(e) => handleListChange('observations', index, e.target.value)}
-                                    className={`${inputFieldClasses} resize-y min-h-[42px]`}
-                                    placeholder="Ex: Pode ser congelado por até 3 meses."
-                                    rows={1}
-                                />
-                                <button 
-                                    type="button" 
-                                    onClick={() => removeListItem('observations', index)} 
-                                    className="text-rose-400 hover:text-brand-primary p-2 mt-1 rounded-full hover:bg-rose-100 dark:hover:bg-gray-600 disabled:opacity-50"
-                                    disabled={recipe.observations!.length <= 1 && obs === ''}
-                                >
-                                    <TrashIcon className="w-5 h-5" />
-                                </button>
-                            </div>
-                        ))}
-                    </div>
-                    <button 
-                        type="button" 
-                        onClick={() => addListItem('observations')}
-                        className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-rose-200 dark:border-gray-500 text-brand-light-text dark:text-gray-400 hover:bg-rose-50 dark:hover:bg-gray-700/50 hover:border-brand-secondary text-sm py-2 px-3 rounded-lg transition-colors"
-                    >
-                        <PlusIcon className="w-4 h-4" /> Adicionar Observação
-                    </button>
-                </div>
-            </div>
+            {type === 'recipe' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 relative z-10">
+                  <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700 space-y-4">
+                      <h2 className="font-display text-2xl text-brand-text dark:text-rose-100">Modo de Preparo</h2>
+                      <div className="space-y-2">
+                          {recipe.preparationMethod?.map((step, index) => (
+                              <div key={index} className="flex items-start gap-2">
+                                  <span className="pt-3 text-brand-light-text dark:text-gray-400 font-semibold">{index + 1}.</span>
+                                  <textarea 
+                                      value={step} 
+                                      onChange={(e) => handleListChange('preparationMethod', index, e.target.value)}
+                                      className={`${inputFieldClasses} resize-y min-h-[42px]`}
+                                      placeholder="Ex: Misture os ingredientes secos..."
+                                      rows={1}
+                                  />
+                                  <button 
+                                      type="button" 
+                                      onClick={() => removeListItem('preparationMethod', index)} 
+                                      className="text-rose-400 hover:text-brand-primary p-2 mt-1 rounded-full hover:bg-rose-100 dark:hover:bg-gray-600 disabled:opacity-50"
+                                      disabled={recipe.preparationMethod!.length <= 1 && step === ''}
+                                  >
+                                      <TrashIcon className="w-5 h-5" />
+                                  </button>
+                              </div>
+                          ))}
+                      </div>
+                      <button 
+                          type="button" 
+                          onClick={() => addListItem('preparationMethod')}
+                          className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-rose-200 dark:border-gray-500 text-brand-light-text dark:text-gray-400 hover:bg-rose-50 dark:hover:bg-gray-700/50 hover:border-brand-secondary text-sm py-2 px-3 rounded-lg transition-colors"
+                      >
+                          <PlusIcon className="w-4 h-4" /> Adicionar Passo
+                      </button>
+                  </div>
+                  
+                  <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700 space-y-4">
+                      <input 
+                          type="text"
+                          value={recipe.observationsTitle || ''}
+                          onChange={e => setRecipe(prev => ({...prev, observationsTitle: e.target.value}))}
+                          className="font-display text-2xl text-brand-text dark:text-rose-100 bg-transparent border-b-2 border-transparent focus:border-brand-secondary focus:outline-none transition-colors w-full"
+                          placeholder="Título da Seção"
+                      />
+                      <div className="space-y-2">
+                          {recipe.observations?.map((obs, index) => (
+                              <div key={index} className="flex items-start gap-2">
+                                  <span className="pt-3 text-brand-light-text dark:text-gray-400 font-semibold">•</span>
+                                  <textarea 
+                                      value={obs} 
+                                      onChange={(e) => handleListChange('observations', index, e.target.value)}
+                                      className={`${inputFieldClasses} resize-y min-h-[42px]`}
+                                      placeholder="Ex: Pode ser congelado por até 3 meses."
+                                      rows={1}
+                                  />
+                                  <button 
+                                      type="button" 
+                                      onClick={() => removeListItem('observations', index)} 
+                                      className="text-rose-400 hover:text-brand-primary p-2 mt-1 rounded-full hover:bg-rose-100 dark:hover:bg-gray-600 disabled:opacity-50"
+                                      disabled={recipe.observations!.length <= 1 && obs === ''}
+                                  >
+                                      <TrashIcon className="w-5 h-5" />
+                                  </button>
+                              </div>
+                          ))}
+                      </div>
+                      <button 
+                          type="button" 
+                          onClick={() => addListItem('observations')}
+                          className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-rose-200 dark:border-gray-500 text-brand-light-text dark:text-gray-400 hover:bg-rose-50 dark:hover:bg-gray-700/50 hover:border-brand-secondary text-sm py-2 px-3 rounded-lg transition-colors"
+                      >
+                          <PlusIcon className="w-4 h-4" /> Adicionar Observação
+                      </button>
+                  </div>
+              </div>
+            )}
 
         </form>
     </div>

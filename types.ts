@@ -58,8 +58,9 @@ export interface Recipe {
   laborMinutes: number;
   energyUsageMinutes: number;
   gasUsageMinutes: number;
-  variableCostsPercentage: number;
-  profitMargin: number;
+  variableCostsPercentage?: number;
+  profitMargin?: number;
+  evaporationPercentage: number;
   preparationMethod?: string[];
   observationsTitle?: string;
   observations?: string[];
@@ -73,4 +74,4 @@ export interface AppSettings {
   ingredientOutdatedDays: number;
 }
 
-export type Page = 'dashboard' | 'ingredients' | 'packaging' | 'recipes' | 'settings' | 'recipe-pricer' | 'recipe-details' | 'ingredient-form' | 'packaging-form' | 'ingredient-details';
+export type Page = 'dashboard' | 'ingredients' | 'packaging' | 'recipes' | 'settings' | 'recipe-pricer' | 'recipe-details' | 'ingredient-form' | 'packaging-form' | 'ingredient-details' | 'fillings' | 'filling-pricer' | 'filling-details';

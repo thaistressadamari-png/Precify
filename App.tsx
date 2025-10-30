@@ -18,6 +18,7 @@ import { ShoppingBagIcon } from './components/icons/ShoppingBagIcon';
 import { BoxIcon } from './components/icons/BoxIcon';
 import { BookOpenIcon } from './components/icons/BookOpenIcon';
 import { AdjustmentsHorizontalIcon } from './components/icons/AdjustmentsHorizontalIcon';
+import { FireIcon } from './components/icons/FireIcon';
 
 const usePersistentState = <T,>(key: string, defaultValue: T): [T, React.Dispatch<React.SetStateAction<T>>] => {
   const [state, setState] = useState<T>(() => {
@@ -65,9 +66,14 @@ const App: React.FC = () => {
   const [ingredients, setIngredients] = usePersistentState<Ingredient[]>('ingredients', defaultIngredients);
   const [packaging, setPackaging] = usePersistentState<Packaging[]>('packaging', defaultPackaging);
   const [recipes, setRecipes] = usePersistentState<Recipe[]>('recipes', defaultRecipes);
+  const [fillings, setFillings] = usePersistentState<Recipe[]>('fillings', []);
   const [settings, setSettings] = usePersistentState<AppSettings>('settings', defaultSettings);
+  
   const [recipeToEdit, setRecipeToEdit] = useState<Recipe | null>(null);
   const [recipeToView, setRecipeToView] = useState<Recipe | null>(null);
+  const [fillingToEdit, setFillingToEdit] = useState<Recipe | null>(null);
+  const [fillingToView, setFillingToView] = useState<Recipe | null>(null);
+
   const [ingredientToEdit, setIngredientToEdit] = useState<Ingredient | null>(null);
   const [ingredientFormMode, setIngredientFormMode] = useState<'create' | 'edit' | 'addPurchase'>('create');
   const [ingredientToView, setIngredientToView] = useState<Ingredient | null>(null);
@@ -77,12 +83,10 @@ const App: React.FC = () => {
 
   useEffect(() => {
     // One-time data migration for ingredients to ensure each purchase has a unit.
-    const needsMigration = ingredients.some(ing => !ing.history || ing.history.some(p => p.unit === undefined));
-    if (needsMigration) {
+    const needsIngredientMigration = ingredients.some(ing => !ing.history || ing.history.some(p => p.unit === undefined));
+    if (needsIngredientMigration) {
         const migratedIngredients = ingredients.map(ing => {
             let history = ing.history;
-
-            // Step 1: If history doesn't exist, create it from the root ingredient properties.
             if (!history) {
                 history = [{
                     id: ing.id + '-' + new Date().getTime(),
@@ -90,30 +94,13 @@ const App: React.FC = () => {
                     supplier: ing.supplier,
                     packagePrice: ing.packagePrice,
                     packageAmount: ing.packageAmount,
-                    unit: ing.unit, // Ensure unit is included
+                    unit: ing.unit,
                 }];
             }
-
-            // Step 2: Ensure every purchase in history has a unit.
-            const historyWithUnits = history.map(p => {
-                if (p.unit !== undefined) return p;
-                // If a purchase is missing a unit, fall back to the ingredient's main unit.
-                return { ...p, unit: ing.unit };
-            });
-
-            // Step 3: Sort history to ensure the latest purchase is first.
+            const historyWithUnits = history.map(p => ({ ...p, unit: p.unit || ing.unit }));
             const sortedHistory = historyWithUnits.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-            // Step 4: Ensure the top-level ingredient properties reflect the latest purchase.
             const latestPurchase = sortedHistory[0];
-            
-            if (!latestPurchase) {
-              return {
-                ...ing,
-                history: sortedHistory,
-              };
-            }
-
+            if (!latestPurchase) return { ...ing, history: sortedHistory };
             return {
                 ...ing,
                 supplier: latestPurchase.supplier,
@@ -126,9 +113,21 @@ const App: React.FC = () => {
         });
         setIngredients(migratedIngredients);
     }
+    
+    // One-time data migration for recipes to add evaporationPercentage
+    const needsRecipeMigration = recipes.some(r => r.evaporationPercentage === undefined);
+    if (needsRecipeMigration) {
+      setRecipes(prev => prev.map(r => r.evaporationPercentage === undefined ? { ...r, evaporationPercentage: 0 } : r));
+    }
+
+    const needsFillingMigration = fillings.some(r => r.evaporationPercentage === undefined);
+    if (needsFillingMigration) {
+      setFillings(prev => prev.map(r => r.evaporationPercentage === undefined ? { ...r, evaporationPercentage: 0 } : r));
+    }
 }, []);
 
 
+  // --- RECIPE HANDLERS ---
   const handleSaveRecipe = (recipe: Recipe) => {
     setRecipes(prev => {
       const exists = prev.some(r => r.id === recipe.id);
@@ -140,171 +139,99 @@ const App: React.FC = () => {
     setPage('recipes');
     setRecipeToEdit(null);
   };
+  const handleEditRecipe = (recipe: Recipe) => { setRecipeToEdit(recipe); setPage('recipe-pricer'); };
+  const handleDeleteRecipe = (recipeId: string) => { setRecipes(prev => prev.filter(r => r.id !== recipeId)); setPage('recipes'); setRecipeToView(null); };
+  const handleViewRecipeDetails = (recipe: Recipe) => { setRecipeToView(recipe); setPage('recipe-details'); }
+  const handleAddNewRecipe = () => { setRecipeToEdit(null); setPage('recipe-pricer'); };
+  const handleCancelRecipePricer = () => { setRecipeToEdit(null); setPage('recipes'); }
 
-  const handleEditRecipe = (recipe: Recipe) => {
-    setRecipeToEdit(recipe);
-    setPage('recipe-pricer');
+  // --- FILLING HANDLERS ---
+  const handleSaveFilling = (filling: Recipe) => {
+    setFillings(prev => {
+      const exists = prev.some(r => r.id === filling.id);
+      if (exists) {
+        return prev.map(r => r.id === filling.id ? filling : r);
+      }
+      return [...prev, filling];
+    });
+    setPage('fillings');
+    setFillingToEdit(null);
   };
+  const handleEditFilling = (filling: Recipe) => { setFillingToEdit(filling); setPage('filling-pricer'); };
+  const handleDeleteFilling = (fillingId: string) => { setFillings(prev => prev.filter(r => r.id !== fillingId)); setPage('fillings'); setFillingToView(null); };
+  const handleViewFillingDetails = (filling: Recipe) => { setFillingToView(filling); setPage('filling-details'); };
+  const handleAddNewFilling = () => { setFillingToEdit(null); setPage('filling-pricer'); };
+  const handleCancelFillingPricer = () => { setFillingToEdit(null); setPage('fillings'); };
 
-  const handleDeleteRecipe = (recipeId: string) => {
-    setRecipes(prev => prev.filter(r => r.id !== recipeId));
-    setPage('recipes');
-    setRecipeToView(null);
-  };
-  
-  const handleViewDetails = (recipe: Recipe) => {
-      setRecipeToView(recipe);
-      setPage('recipe-details');
-  }
 
-  const handleAddNewRecipe = () => {
-    setRecipeToEdit(null);
-    setPage('recipe-pricer');
-  };
-  
-  const handleCancelRecipePricer = () => {
-    setRecipeToEdit(null);
-    setPage('recipes');
-  }
-
-  const handleAddNewIngredient = () => {
-    setIngredientToEdit(null);
-    setIngredientFormMode('create');
-    setPage('ingredient-form');
-  };
-
-  const handleEditIngredient = (ingredient: Ingredient) => {
-    setIngredientToEdit(ingredient);
-    setIngredientFormMode('edit');
-    setPage('ingredient-form');
-  };
-
-  const handleStartAddPurchase = (ingredient: Ingredient) => {
-    setIngredientToEdit(ingredient);
-    setIngredientFormMode('addPurchase');
-    setPage('ingredient-form');
-  };
-  
-  const handleViewIngredientDetails = (ingredient: Ingredient) => {
-    setIngredientToView(ingredient);
-    setPage('ingredient-details');
-  };
-
+  // --- INGREDIENT HANDLERS ---
+  const handleAddNewIngredient = () => { setIngredientToEdit(null); setIngredientFormMode('create'); setPage('ingredient-form'); };
+  const handleEditIngredient = (ingredient: Ingredient) => { setIngredientToEdit(ingredient); setIngredientFormMode('edit'); setPage('ingredient-form'); };
+  const handleStartAddPurchase = (ingredient: Ingredient) => { setIngredientToEdit(ingredient); setIngredientFormMode('addPurchase'); setPage('ingredient-form'); };
+  const handleViewIngredientDetails = (ingredient: Ingredient) => { setIngredientToView(ingredient); setPage('ingredient-details'); };
   const handleSaveIngredient = (ingredient: Ingredient) => {
     const wasEditing = !!ingredientToEdit;
-
     setIngredients(prev => {
       const exists = prev.some(i => i.id === ingredient.id);
-      if (exists) {
-        return prev.map(i => (i.id === ingredient.id ? ingredient : i));
-      }
+      if (exists) return prev.map(i => (i.id === ingredient.id ? ingredient : i));
       return [...prev, ingredient];
     });
     setIngredientToEdit(null);
-
     if (wasEditing) {
       if (ingredientFormMode === 'addPurchase') {
-        setIngredientToView(ingredient);
-        setPage('ingredient-details');
-      } else { // edit mode
-        setHighlightedIngredientId(ingredient.id);
-        setPage('ingredients');
+        setIngredientToView(ingredient); setPage('ingredient-details');
+      } else {
+        setHighlightedIngredientId(ingredient.id); setPage('ingredients');
       }
-    } else { // create mode
-      setPage('ingredients');
-    }
-  };
-  
-  const handleCancelIngredientForm = () => {
-    const previousPage = ingredientToEdit ? 'ingredient-details' : 'ingredients';
-    const ingredientToKeepViewing = ingredientToEdit;
-    setIngredientToEdit(null);
-    
-    if (previousPage === 'ingredient-details' && ingredientToKeepViewing) {
-      setIngredientToView(ingredientToKeepViewing);
-      setPage('ingredient-details');
     } else {
       setPage('ingredients');
     }
   };
-  
-  const handleDeleteIngredient = (ingredientId: string) => {
-    setIngredients(prev => prev.filter(i => i.id !== ingredientId));
-    setPage('ingredients');
-    setIngredientToView(null);
+  const handleCancelIngredientForm = () => {
+    const previousPage = ingredientToEdit ? 'ingredient-details' : 'ingredients';
+    const ingredientToKeepViewing = ingredientToEdit;
+    setIngredientToEdit(null);
+    if (previousPage === 'ingredient-details' && ingredientToKeepViewing) {
+      setIngredientToView(ingredientToKeepViewing); setPage('ingredient-details');
+    } else {
+      setPage('ingredients');
+    }
   };
-
+  const handleDeleteIngredient = (ingredientId: string) => { setIngredients(prev => prev.filter(i => i.id !== ingredientId)); setPage('ingredients'); setIngredientToView(null); };
   const handleDeletePurchase = (ingredientId: string, purchaseId: string) => {
     setIngredients(prevIngredients => {
       const ingredientIndex = prevIngredients.findIndex(i => i.id === ingredientId);
       if (ingredientIndex === -1) return prevIngredients;
-
       const newIngredients = [...prevIngredients];
-      // Deep copy ingredient to avoid mutation issues
       const ingredient = JSON.parse(JSON.stringify(newIngredients[ingredientIndex]));
-
-      const initialHistoryLength = ingredient.history.length;
       ingredient.history = ingredient.history.filter((p: any) => p.id !== purchaseId);
-
-      if (ingredient.history.length === initialHistoryLength) {
-          return prevIngredients; // No change
-      }
-
       if (ingredient.history.length === 0) {
-          ingredient.packagePrice = 0;
-          ingredient.packageAmount = 0;
-          ingredient.purchaseDate = undefined;
-          ingredient.supplier = undefined;
+          ingredient.packagePrice = 0; ingredient.packageAmount = 0; ingredient.purchaseDate = undefined; ingredient.supplier = undefined;
       } else {
           ingredient.history.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
           const latestPurchase = ingredient.history[0];
-          ingredient.packagePrice = latestPurchase.packagePrice;
-          ingredient.packageAmount = latestPurchase.packageAmount;
-          ingredient.unit = latestPurchase.unit;
-          ingredient.purchaseDate = latestPurchase.date;
-          ingredient.supplier = latestPurchase.supplier;
+          ingredient.packagePrice = latestPurchase.packagePrice; ingredient.packageAmount = latestPurchase.packageAmount; ingredient.unit = latestPurchase.unit; ingredient.purchaseDate = latestPurchase.date; ingredient.supplier = latestPurchase.supplier;
       }
-      
       newIngredients[ingredientIndex] = ingredient;
-      
-      if (ingredientToView?.id === ingredientId) {
-          setIngredientToView(ingredient);
-      }
-
+      if (ingredientToView?.id === ingredientId) { setIngredientToView(ingredient); }
       return newIngredients;
     });
   };
 
-  const handleAddNewPackaging = () => {
-    setPackagingToEdit(null);
-    setPage('packaging-form');
-  };
-
-  const handleEditPackaging = (pkg: Packaging) => {
-    setPackagingToEdit(pkg);
-    setPage('packaging-form');
-  };
-
+  // --- PACKAGING HANDLERS ---
+  const handleAddNewPackaging = () => { setPackagingToEdit(null); setPage('packaging-form'); };
+  const handleEditPackaging = (pkg: Packaging) => { setPackagingToEdit(pkg); setPage('packaging-form'); };
   const handleSavePackaging = (pkg: Packaging) => {
     setPackaging(prev => {
       const exists = prev.some(p => p.id === pkg.id);
-      if (exists) {
-        return prev.map(p => (p.id === pkg.id ? pkg : p));
-      }
+      if (exists) return prev.map(p => (p.id === pkg.id ? pkg : p));
       return [...prev, pkg];
     });
-    setPage('packaging');
-    setPackagingToEdit(null);
+    setPage('packaging'); setPackagingToEdit(null);
   };
+  const handleCancelPackagingForm = () => { setPackagingToEdit(null); setPage('packaging'); };
+  const handleDeletePackaging = (packagingId: string) => { setPackaging(prev => prev.filter(p => p.id !== packagingId)); };
 
-  const handleCancelPackagingForm = () => {
-    setPackagingToEdit(null);
-    setPage('packaging');
-  };
-
-  const handleDeletePackaging = (packagingId: string) => {
-    setPackaging(prev => prev.filter(p => p.id !== packagingId));
-  };
 
   const renderPage = () => {
     switch (page) {
@@ -315,81 +242,70 @@ const App: React.FC = () => {
           packaging={packaging} 
           settings={settings} 
           setPage={setPage} 
-          onGoToEdit={handleEditRecipe}
+          onGoToEditRecipe={handleEditRecipe}
           onGoToEditIngredient={handleStartAddPurchase}
         />;
       case 'ingredients':
         return <IngredientManager 
           ingredients={ingredients} 
-          onAddNew={handleAddNewIngredient}
-          onEdit={handleEditIngredient}
-          onDelete={handleDeleteIngredient}
-          onViewDetails={handleViewIngredientDetails}
-          onImport={setIngredients}
-          highlightedId={highlightedIngredientId}
+          onAddNew={handleAddNewIngredient} onEdit={handleEditIngredient} onDelete={handleDeleteIngredient}
+          onViewDetails={handleViewIngredientDetails} onImport={setIngredients} highlightedId={highlightedIngredientId}
           onHighlightComplete={() => setHighlightedIngredientId(null)}
         />;
       case 'packaging':
         return <PackagingManager
           packaging={packaging}
-          onAddNew={handleAddNewPackaging}
-          onEdit={handleEditPackaging}
-          onDelete={handleDeletePackaging}
+          onAddNew={handleAddNewPackaging} onEdit={handleEditPackaging} onDelete={handleDeletePackaging}
           onImport={setPackaging}
         />;
       case 'recipes':
         return <Recipes 
-            recipes={recipes} 
-            onAddNew={handleAddNewRecipe}
-            onEdit={handleEditRecipe} 
-            onDelete={handleDeleteRecipe} 
-            onViewDetails={handleViewDetails}
-            ingredients={ingredients}
-            packagingItems={packaging}
-            settings={settings}
-            onImport={setRecipes}
+            recipes={recipes} type="recipe" onAddNew={handleAddNewRecipe} onEdit={handleEditRecipe} 
+            onDelete={handleDeleteRecipe} onViewDetails={handleViewRecipeDetails}
+            ingredients={ingredients} packagingItems={packaging} settings={settings} onImport={setRecipes}
+        />;
+      case 'fillings':
+        return <Recipes 
+            recipes={fillings} type="filling" onAddNew={handleAddNewFilling} onEdit={handleEditFilling} 
+            onDelete={handleDeleteFilling} onViewDetails={handleViewFillingDetails}
+            ingredients={ingredients} packagingItems={packaging} settings={settings} onImport={setFillings}
         />;
       case 'settings':
         return <Settings settings={settings} onUpdateSettings={setSettings} />;
       case 'recipe-pricer':
         return <RecipePricer 
-            ingredients={ingredients} 
-            packagingItems={packaging} 
-            settings={settings}
-            onSave={handleSaveRecipe}
-            onCancel={handleCancelRecipePricer}
-            recipeToEdit={recipeToEdit}
+            ingredients={ingredients} packagingItems={packaging} settings={settings} type="recipe"
+            onSave={handleSaveRecipe} onCancel={handleCancelRecipePricer} recipeToEdit={recipeToEdit}
         />;
        case 'recipe-details':
         return recipeToView ? <RecipeDetails 
-            recipe={recipeToView}
-            ingredients={ingredients}
-            packagingItems={packaging}
-            settings={settings}
-            onEdit={handleEditRecipe}
-            onDelete={handleDeleteRecipe}
-            onClose={() => setPage('recipes')}
+            recipe={recipeToView} type="recipe" ingredients={ingredients} packagingItems={packaging} settings={settings}
+            onEdit={handleEditRecipe} onDelete={handleDeleteRecipe} onClose={() => setPage('recipes')}
+        /> : null;
+      case 'filling-pricer':
+        return <RecipePricer 
+            ingredients={ingredients} packagingItems={packaging} settings={settings} type="filling"
+            onSave={handleSaveFilling} onCancel={handleCancelFillingPricer} recipeToEdit={fillingToEdit}
+        />;
+       case 'filling-details':
+        return fillingToView ? <RecipeDetails 
+            recipe={fillingToView} type="filling" ingredients={ingredients} packagingItems={packaging} settings={settings}
+            onEdit={handleEditFilling} onDelete={handleDeleteFilling} onClose={() => setPage('fillings')}
         /> : null;
        case 'ingredient-form':
         return <IngredientForm
-          onSave={handleSaveIngredient}
-          onCancel={handleCancelIngredientForm}
-          ingredientToEdit={ingredientToEdit}
-          mode={ingredientFormMode}
+          onSave={handleSaveIngredient} onCancel={handleCancelIngredientForm}
+          ingredientToEdit={ingredientToEdit} mode={ingredientFormMode}
         />;
       case 'packaging-form':
         return <PackagingForm
-          onSave={handleSavePackaging}
-          onCancel={handleCancelPackagingForm}
+          onSave={handleSavePackaging} onCancel={handleCancelPackagingForm}
           packagingToEdit={packagingToEdit}
         />;
       case 'ingredient-details':
         return ingredientToView ? <IngredientDetails 
-          ingredient={ingredientToView}
-          onEdit={handleStartAddPurchase}
-          onDelete={handleDeleteIngredient}
-          onDeletePurchase={handleDeletePurchase}
-          onClose={() => setPage('ingredients')}
+          ingredient={ingredientToView} onEdit={handleStartAddPurchase} onDelete={handleDeleteIngredient}
+          onDeletePurchase={handleDeletePurchase} onClose={() => setPage('ingredients')}
         /> : null;
       default:
         return <div>Página não encontrada</div>;
@@ -397,8 +313,9 @@ const App: React.FC = () => {
   };
 
   const getBasePage = (currentPage: Page): Page => {
-    if (currentPage === 'recipe-pricer' || currentPage === 'recipe-details') return 'recipes';
-    if (currentPage === 'ingredient-form' || currentPage === 'ingredient-details') return 'ingredients';
+    if (['recipe-pricer', 'recipe-details'].includes(currentPage)) return 'recipes';
+    if (['filling-pricer', 'filling-details'].includes(currentPage)) return 'fillings';
+    if (['ingredient-form', 'ingredient-details'].includes(currentPage)) return 'ingredients';
     if (currentPage === 'packaging-form') return 'packaging';
     return currentPage;
   };
@@ -412,10 +329,9 @@ const App: React.FC = () => {
     <button 
       onClick={() => {
         setPage(targetPage);
-        setRecipeToView(null);
-        setRecipeToEdit(null);
-        setIngredientToEdit(null);
-        setIngredientToView(null);
+        setRecipeToView(null); setRecipeToEdit(null);
+        setFillingToView(null); setFillingToEdit(null);
+        setIngredientToEdit(null); setIngredientToView(null);
         setPackagingToEdit(null);
       }}
       className={`flex flex-col md:flex-row items-center justify-center md:justify-start gap-2 md:gap-3 px-3 py-2 rounded-lg text-sm md:text-base font-medium transition-colors w-full text-left ${activePage === targetPage ? 'bg-brand-primary text-white' : 'text-brand-light-text dark:text-gray-400 hover:bg-rose-100 dark:hover:bg-gray-700'}`}
@@ -437,6 +353,7 @@ const App: React.FC = () => {
                 <NavItem label="Ingredientes" targetPage="ingredients" icon={ShoppingBagIcon}/>
                 <NavItem label="Embalagens" targetPage="packaging" icon={BoxIcon}/>
                 <NavItem label="Receitas" targetPage="recipes" icon={BookOpenIcon}/>
+                <NavItem label="Recheios" targetPage="fillings" icon={FireIcon}/>
                 <NavItem label="Ajustes" targetPage="settings" icon={AdjustmentsHorizontalIcon}/>
                  <div className="hidden md:block border-t border-rose-200 dark:border-gray-700 my-2"></div>
                 <button onClick={() => setIsDarkMode(!isDarkMode)} className="flex flex-col md:flex-row items-center justify-center md:justify-start gap-2 md:gap-3 px-3 py-2 rounded-lg text-sm md:text-base font-medium transition-colors w-full text-left text-brand-light-text dark:text-gray-400 hover:bg-rose-100 dark:hover:bg-gray-700">

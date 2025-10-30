@@ -21,9 +21,10 @@ interface RecipesProps {
   packagingItems: Packaging[];
   settings: AppSettings;
   onImport: (newRecipes: Recipe[]) => void;
+  type: 'recipe' | 'filling';
 }
 
-export const Recipes: React.FC<RecipesProps> = ({ recipes, onAddNew, onEdit, onDelete, onViewDetails, ingredients, packagingItems, settings, onImport }) => {
+export const Recipes: React.FC<RecipesProps> = ({ recipes, onAddNew, onEdit, onDelete, onViewDetails, ingredients, packagingItems, settings, onImport, type }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [recipeToDelete, setRecipeToDelete] = useState<Recipe | null>(null);
     const [dataToImport, setDataToImport] = useState<Recipe[] | null>(null);
@@ -31,7 +32,7 @@ export const Recipes: React.FC<RecipesProps> = ({ recipes, onAddNew, onEdit, onD
 
     const recipesWithStatus = useMemo(() => {
         return recipes.map(recipe => {
-            const calculated = calculateCosts(recipe, ingredients, packagingItems, settings);
+            const calculated = calculateCosts(recipe, ingredients, packagingItems, settings, type);
             const hasMissingIngredient = recipe.ingredientSections?.some(section =>
                 section.ingredients.some(
                     recipeIng => !ingredients.find(ing => ing.id === recipeIng.ingredientId)
@@ -40,22 +41,18 @@ export const Recipes: React.FC<RecipesProps> = ({ recipes, onAddNew, onEdit, onD
             const hasMissingPackaging = recipe.packaging.some(
                 recipePkg => !packagingItems.find(pkg => pkg.id === recipePkg.packagingId)
             );
-            const isInvalid = !isFinite(calculated.totalCost) || !isFinite(calculated.finalPrice);
-
+            
             let status: 'ok' | 'warning' | 'error' = 'ok';
             let statusMessage = '';
             
-            if (isInvalid) {
-                status = 'error';
-                statusMessage = 'Custo ou preço inválido. Edite para recalcular.';
-            } else if (hasMissingIngredient || hasMissingPackaging) {
+            if (hasMissingIngredient || hasMissingPackaging) {
                 status = 'warning';
                 statusMessage = 'Contém itens excluídos. O custo pode estar incorreto.';
             }
 
             return { ...recipe, ...calculated, status, statusMessage };
         });
-    }, [recipes, ingredients, packagingItems, settings]);
+    }, [recipes, ingredients, packagingItems, settings, type]);
 
     const filteredRecipes = useMemo(() => {
         return recipesWithStatus.filter(recipe =>
@@ -76,7 +73,7 @@ export const Recipes: React.FC<RecipesProps> = ({ recipes, onAddNew, onEdit, onD
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = 'precify_receitas.json';
+        link.download = `precify_${type === 'recipe' ? 'receitas' : 'recheios'}.json`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -99,7 +96,7 @@ export const Recipes: React.FC<RecipesProps> = ({ recipes, onAddNew, onEdit, onD
                 const parsedData = JSON.parse(text);
                 
                 if (!Array.isArray(parsedData) || (parsedData.length > 0 && (!parsedData[0].id || !parsedData[0].name || !parsedData[0].ingredientSections))) {
-                    throw new Error("Formato de arquivo inválido para receitas.");
+                    throw new Error("Formato de arquivo inválido.");
                 }
                 
                 setDataToImport(parsedData as Recipe[]);
@@ -123,11 +120,14 @@ export const Recipes: React.FC<RecipesProps> = ({ recipes, onAddNew, onEdit, onD
         }
     };
 
+  const title = type === 'recipe' ? 'Minhas Receitas' : 'Meus Recheios';
+  const newButtonLabel = type === 'recipe' ? 'Nova Receita' : 'Novo Recheio';
+
   return (
     <>
     <div className="space-y-8 animate-fade-in">
         <div className="flex justify-between items-center flex-wrap gap-4">
-            <h1 className="font-display text-4xl text-brand-text dark:text-rose-100">Minhas Receitas</h1>
+            <h1 className="font-display text-4xl text-brand-text dark:text-rose-100">{title}</h1>
              <div className="flex items-center gap-2 flex-wrap">
               <button onClick={handleImportClick} className="flex items-center justify-center gap-2 bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105 text-sm">
                   <ArrowDownTrayIcon className="w-5 h-5"/>
@@ -139,7 +139,7 @@ export const Recipes: React.FC<RecipesProps> = ({ recipes, onAddNew, onEdit, onD
               </button>
               <button onClick={onAddNew} className="flex items-center justify-center gap-2 bg-brand-primary hover:bg-rose-700 text-white font-bold py-3 px-5 rounded-lg shadow-md transition-transform transform hover:scale-105">
                   <PlusIcon className="w-6 h-6"/>
-                  <span>Nova Receita</span>
+                  <span>{newButtonLabel}</span>
               </button>
             </div>
         </div>
@@ -149,7 +149,7 @@ export const Recipes: React.FC<RecipesProps> = ({ recipes, onAddNew, onEdit, onD
                 <div className="relative">
                     <input 
                         type="search"
-                        placeholder="Buscar receita..."
+                        placeholder="Buscar..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="pl-10 pr-4 py-2 w-full md:w-80 border border-rose-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-brand-secondary focus:border-brand-secondary"
@@ -168,21 +168,40 @@ export const Recipes: React.FC<RecipesProps> = ({ recipes, onAddNew, onEdit, onD
                                 <p className="text-sm text-brand-light-text dark:text-gray-400 mb-4">Rendimento: {recipe.yieldAmount} {recipe.yieldUnit}</p>
                                 
                                 <div className="space-y-2 text-sm">
-                                    <div className="flex justify-between">
-                                        <span className="text-brand-light-text dark:text-gray-400">Custo Total:</span>
-                                        <span className="font-mono font-semibold text-brand-text dark:text-gray-200">{formatCurrency(recipe.totalCost)}</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-blue-600 dark:text-blue-400">Preço / Unidade:</span>
-                                        <span className="font-mono font-semibold text-blue-600 dark:text-blue-400">{formatCurrency(recipe.pricePerYieldUnit)}</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span className="font-bold text-green-600 dark:text-green-400">Preço Final:</span>
-                                        <span className="font-mono font-bold text-lg text-green-600 dark:text-green-400">{formatCurrency(recipe.finalPrice)}</span>
-                                    </div>
+                                  {type === 'recipe' ? (
+                                    <>
+                                      <div className="flex justify-between">
+                                          <span className="text-brand-light-text dark:text-gray-400">Custo Total:</span>
+                                          <span className="font-mono font-semibold text-brand-text dark:text-gray-200">{formatCurrency(recipe.totalCost)}</span>
+                                      </div>
+                                      <div className="flex justify-between">
+                                          <span className="text-brand-light-text dark:text-gray-400">Rendimento Líquido:</span>
+                                          <span className="font-mono font-semibold text-brand-text dark:text-gray-200">{recipe.netYieldAmount.toFixed(2)} {recipe.yieldUnit}</span>
+                                      </div>
+                                      <div className="flex justify-between">
+                                          <span className="font-bold text-green-600 dark:text-green-400">Preço / Kg:</span>
+                                          <span className="font-mono font-bold text-lg text-green-600 dark:text-green-400">{formatCurrency(recipe.pricePerKg)}</span>
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <div className="flex justify-between">
+                                          <span className="text-brand-light-text dark:text-gray-400">Custo Ingredientes:</span>
+                                          <span className="font-mono font-semibold text-brand-text dark:text-gray-200">{formatCurrency(recipe.ingredientsCost)}</span>
+                                      </div>
+                                      <div className="flex justify-between">
+                                          <span className="text-blue-600 dark:text-blue-400">Preço / Kg:</span>
+                                          <span className="font-mono font-semibold text-blue-600 dark:text-blue-400">{formatCurrency(recipe.pricePerKg)}</span>
+                                      </div>
+                                      <div className="flex justify-between">
+                                          <span className="font-bold text-green-600 dark:text-green-400">Custo Total:</span>
+                                          <span className="font-mono font-bold text-lg text-green-600 dark:text-green-400">{formatCurrency(recipe.totalCost)}</span>
+                                      </div>
+                                    </>
+                                  )}
                                 </div>
                                 {recipe.status !== 'ok' && (
-                                    <div className={`mt-4 p-2 rounded-lg flex items-start gap-2 text-xs ${recipe.status === 'warning' ? 'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-300' : 'bg-rose-100 dark:bg-rose-900/50 text-rose-800 dark:text-rose-300'}`}>
+                                    <div className={`mt-4 p-2 rounded-lg flex items-start gap-2 text-xs bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-300`}>
                                        <InformationCircleIcon className="w-4 h-4 flex-shrink-0 mt-px" />
                                        <span>{recipe.statusMessage}</span>
                                     </div>
@@ -205,10 +224,10 @@ export const Recipes: React.FC<RecipesProps> = ({ recipes, onAddNew, onEdit, onD
             ) : (
                 <div className="text-center py-16">
                     <h3 className="text-lg font-semibold text-brand-text dark:text-gray-300">
-                        {searchTerm ? 'Nenhuma receita encontrada' : 'Nenhuma receita cadastrada'}
+                        {searchTerm ? 'Nenhum item encontrado' : 'Nenhum item cadastrado'}
                     </h3>
                     <p className="text-brand-light-text dark:text-gray-400 mt-2">
-                        {searchTerm ? 'Tente buscar por outro termo.' : 'Clique em "Nova Receita" para começar a precificar!'}
+                        {searchTerm ? 'Tente buscar por outro termo.' : `Clique em "${newButtonLabel}" para começar!`}
                     </p>
                 </div>
             )}
@@ -218,14 +237,14 @@ export const Recipes: React.FC<RecipesProps> = ({ recipes, onAddNew, onEdit, onD
     <ConfirmModal
         isOpen={!!recipeToDelete}
         title="Confirmar Exclusão"
-        message={`Tem certeza que deseja excluir a receita "${recipeToDelete?.name || ''}"? Esta ação não pode ser desfeita.`}
+        message={`Tem certeza que deseja excluir "${recipeToDelete?.name || ''}"? Esta ação não pode ser desfeita.`}
         onConfirm={confirmDelete}
         onCancel={() => setRecipeToDelete(null)}
     />
      <ConfirmModal
         isOpen={!!dataToImport}
         title="Confirmar Importação"
-        message="A importação substituirá TODAS as suas receitas atuais. Esta ação não pode ser desfeita. Deseja continuar?"
+        message={`A importação substituirá TODOS os seus itens atuais. Esta ação não pode ser desfeita. Deseja continuar?`}
         onConfirm={confirmImport}
         onCancel={() => setDataToImport(null)}
     />

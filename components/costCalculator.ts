@@ -15,10 +15,11 @@ export const getBaseUnit = (unit: string) => {
 const GAS_CANISTER_HOURS = 60;
 
 export const calculateCosts = (
-    recipe: Omit<Recipe, 'id' | 'totalCost' | 'finalPrice' | 'pricePerYieldUnit'>,
+    recipe: Omit<Recipe, 'id'>,
     ingredients: Ingredient[],
     packagingItems: Packaging[],
-    settings: AppSettings
+    settings: AppSettings,
+    type: 'recipe' | 'filling' = 'recipe'
 ) => {
     const allRecipeIngredients = recipe.ingredientSections.flatMap(section => section.ingredients);
     
@@ -50,19 +51,28 @@ export const calculateCosts = (
     const baseCost = ingredientsCost + packagingCost + operationalCosts;
 
     const taxRate = (settings.taxPercentage || 0) / 100;
-    const variableCostsRate = (recipe.variableCostsPercentage || 0) / 100;
-    const markupPercentage = variableCostsRate + taxRate;
-    const divisor = 1 - markupPercentage;
+    
+    let totalCost: number;
+    let taxValue = 0;
 
-    const totalCost = divisor > 0 && isFinite(baseCost) ? baseCost / divisor : Infinity;
+    if (type === 'filling') {
+        totalCost = baseCost;
+    } else { // 'recipe'
+        const divisor = 1 - taxRate;
+        totalCost = divisor > 0 && isFinite(baseCost) ? baseCost / divisor : baseCost;
+        if (isFinite(totalCost)) {
+          taxValue = totalCost * taxRate;
+        }
+    }
     
-    const finalPrice = totalCost * (1 + ((recipe.profitMargin || 0) / 100));
-    const pricePerYieldUnit = recipe.yieldAmount > 0 ? finalPrice / recipe.yieldAmount : 0;
-    
-    const totalProfit = finalPrice - totalCost;
-    
-    const variableCostsValue = totalCost * variableCostsRate;
-    const taxValue = totalCost * taxRate;
+    const netYieldAmount = (recipe.yieldAmount || 0) * (1 - ((recipe.evaporationPercentage || 0) / 100));
+
+    let pricePerKg = 0;
+    const yieldUnit = recipe.yieldUnit?.toLowerCase() || 'g';
+    if ((yieldUnit.includes('g') || yieldUnit.includes('kg')) && netYieldAmount > 0) {
+        const yieldInKg = yieldUnit.includes('kg') ? netYieldAmount : netYieldAmount / 1000;
+        pricePerKg = isFinite(totalCost) && yieldInKg > 0 ? totalCost / yieldInKg : 0;
+    }
 
     return { 
         ingredientsCost, 
@@ -71,12 +81,10 @@ export const calculateCosts = (
         energyCost, 
         gasCost, 
         baseCost,
-        variableCostsValue,
         taxValue,
-        totalCost, 
-        finalPrice, 
-        pricePerYieldUnit,
-        totalProfit
+        totalCost,
+        netYieldAmount,
+        pricePerKg,
     };
 }
 
