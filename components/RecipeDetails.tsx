@@ -104,14 +104,20 @@ export const RecipeDetails: React.FC<RecipeDetailsProps> = ({ recipe, ingredient
 
   const handleGeneratePdf = async () => {
     if (typeof window.html2pdf !== 'function') {
-      alert("Erro: A biblioteca de geração de PDF não foi carregada. Tente recarregar a página.");
+      alert("Erro: A biblioteca de geração de PDF não foi carregada. Tente recarregara página.");
       return;
     }
     
-    // Garante que as fontes personalizadas foram carregadas antes de medir o texto
-    await document.fonts.ready;
+    try {
+      // Explicitly wait for the 'Antonio' font to be loaded before measuring its width.
+      // This prevents issues where the font isn't ready on the first PDF generation,
+      // which would cause an incorrect text width calculation.
+      await document.fonts.load('600 21px Antonio');
+    } catch (err) {
+      console.error('Font could not be loaded for PDF generation:', err);
+      // Proceeding anyway. The layout might be incorrect if a fallback font is used.
+    }
 
-    // Create a temporary element to measure text width
     const tempSpan = document.createElement('span');
     tempSpan.style.fontFamily = 'Antonio, sans-serif';
     tempSpan.style.fontSize = '21px';
@@ -121,18 +127,14 @@ export const RecipeDetails: React.FC<RecipeDetailsProps> = ({ recipe, ingredient
     tempSpan.style.position = 'absolute';
     tempSpan.innerText = recipe.name.toUpperCase();
     document.body.appendChild(tempSpan);
-    
     const textWidth = tempSpan.getBoundingClientRect().width;
-    
     document.body.removeChild(tempSpan);
 
-    // Calculate new height for the black bar, ensuring a minimum height
-    const barHeight = Math.max(181, textWidth + 40); // 181 is original height, +40 provides padding
+    const barHeight = Math.max(181, textWidth + 40);
     const pathH = barHeight - (181 - 180.04);
     const pathCurveControlY = pathH - (180.04 - 173.66);
     const pathVerticalLineEndY = pathH - (180.04 - 165.78);
 
-    // Prepare HTML content for columns
     let ingredientesHtml = '';
     recipe.ingredientSections.forEach(section => {
       if (recipe.ingredientSections.length > 1 || section.name !== "Ingredientes") {
@@ -148,7 +150,6 @@ export const RecipeDetails: React.FC<RecipeDetailsProps> = ({ recipe, ingredient
     const observacoesTitle = recipe.observationsTitle || 'OBSERVAÇÕES';
     const observacoesListHtml = type === 'recipe' && hasObservations ? recipe.observations!.map(obs => `<div>• ${obs}</div>`).join('') : '';
 
-    // Measure content heights in a hidden element
     const measureElement = document.createElement('div');
     measureElement.style.position = 'absolute';
     measureElement.style.visibility = 'hidden';
@@ -186,59 +187,73 @@ export const RecipeDetails: React.FC<RecipeDetailsProps> = ({ recipe, ingredient
 
     const cardTop = 143.35;
     const cardPadding = 25;
-    const contentTop = cardTop + cardPadding;
-
     const mainContentHeight = Math.max(ingredientsHeight, preparoHeight);
-    const contentBottom = contentTop + mainContentHeight;
-    
-    const observationsTop = type === 'recipe' && hasObservations ? contentBottom + cardPadding : contentBottom;
-    const finalContentBottom = observationsTop + (type === 'recipe' && hasObservations ? observationsHeight : 0);
-    const cardBottom = finalContentBottom + cardPadding;
-    
-    const newCardHeight = cardBottom - cardTop;
+    const observationsSectionHeight = type === 'recipe' && hasObservations ? cardPadding + observationsHeight : 0;
+    const totalContentHeight = mainContentHeight + observationsSectionHeight;
+    const newCardHeight = totalContentHeight + (cardPadding * 2);
     const finalCardHeight = Math.max(401, newCardHeight);
 
-    const preparoSectionWidth = (type === 'recipe' && hasPreparationMethod) ? '190px' : '0px';
-
-    const element = document.createElement('div');
-    element.innerHTML = `
-      <div style="width: 595.28px; height: 841.89px; position: relative; overflow: hidden; background-color: #E1E1E1;">
-        <div style="position: absolute; left: -10px; top: -0.27px;">
-          <svg width="596" height="842" viewBox="0 0 596 842" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M595.28 -0.269989H0V841.89H595.28V-0.269989Z" fill="#E1E1E1"/></svg>
-        </div>
-        <div style="position: absolute; left: 139px; top: 22px; color: black; font-size: 68px; font-family: Antonio, sans-serif; word-wrap: break-word;">
-          <span style="font-weight: 100;">FICHA</span> <span style="font-weight: 300;">TÉCNICA</span>
-        </div>
-        
-        <div style="position: absolute; left: 51.97px; top: ${cardTop}px; width: 491.33px; height: ${finalCardHeight}px; background: white; border-radius: 33.77px;"></div>
-        
-        <div style="position: absolute; left: 43px; top: 142px;">
-          <svg width="52" height="${barHeight}" viewBox="0 0 52 ${barHeight}" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M37.28 ${pathH}H14.26C6.38 ${pathH} 0 ${pathCurveControlY} 0 ${pathVerticalLineEndY}V14.26C0 6.38001 6.38 0 14.26 0H37.28C45.16 0 51.54 6.38001 51.54 14.26V${pathVerticalLineEndY}C51.54 ${pathCurveControlY} 45.15 ${pathH} 37.28 ${pathH}Z" fill="black"/>
-          </svg>
-        </div>
-        
-        <div style="position: absolute; left: 43px; top: 142px; width: 52px; height: ${barHeight}px; display: flex; align-items: center; justify-content: center; overflow: hidden;">
-          <div style="transform: rotate(-90deg); color: white; font-size: 21px; font-family: Antonio, sans-serif; font-weight: 600; white-space: nowrap; text-align: center;">${recipe.name.toUpperCase()}</div>
-        </div>
-        
-        <div style="position: absolute; left: 123px; top: ${contentTop}px; width: 180px;">
+    const mainContentHtml = `
+      <div style="display: flex; flex-direction: row; justify-content: flex-start; gap: 30px; align-items: flex-start;">
+        <div style="width: 180px; flex-shrink: 0;">
             <div style="${titleStyle}">INGREDIENTES</div>
             <div style="${baseStyle}">${ingredientesHtml}</div>
         </div>
         ${(type === 'recipe' && hasPreparationMethod) ? `
-          <div style="position: absolute; left: 321px; top: ${contentTop}px; width: ${preparoSectionWidth};">
+          <div style="width: 190px; flex-shrink: 0;">
               <div style="${titleStyle}">MODO DE PREPARO</div>
               <div style="${baseStyle}">${preparoHtml}</div>
           </div>
         ` : ''}
+      </div>
+    `;
+
+    const observationsHtml = (type === 'recipe' && hasObservations) ? `
+        <div style="margin-top: ${cardPadding}px;">
+            <div style="text-align: center; ${titleStyle}">${observacoesTitle.toUpperCase()}</div>
+            <div style="text-align: left; ${baseStyle}">${observacoesListHtml}</div>
+        </div>
+    ` : '';
+    
+    const bleed = 20;
+    const pdfPageWidth = 595.28;
+    const oversizedWidth = pdfPageWidth + (bleed * 2);
+    const centralizingOffset = 43; // Offset to center the content block
+
+    const element = document.createElement('div');
+    element.innerHTML = `
+      <div style="
+        width: ${oversizedWidth}px; 
+        height: 841.89px; 
+        position: relative; 
+        margin-left: -${bleed}px; 
+        padding: 0;
+        border: none;
+        box-sizing: border-box;
+        overflow: hidden; 
+        background-color: #E1E1E1;
+      ">
         
-        ${(type === 'recipe' && hasObservations) ? `
-            <div style="position: absolute; left: 104px; top: ${observationsTop}px; width: 420px;">
-                <div style="text-align: center; ${titleStyle}">${observacoesTitle.toUpperCase()}</div>
-                <div style="text-align: left; ${baseStyle}">${observacoesListHtml}</div>
+            <div style="position: absolute; left: ${8.97 + bleed + centralizingOffset}px; top: ${cardTop}px; width: 491.33px; height: ${finalCardHeight}px; background: white; border-radius: 33.77px; z-index: 2;"></div>
+            
+            <div style="position: absolute; left: ${96 + bleed + centralizingOffset}px; top: 22px; color: black; font-size: 68px; font-family: Antonio, sans-serif; word-wrap: break-word; z-index: 6;">
+              <span style="font-weight: 100;">FICHA</span> <span style="font-weight: 300;">TÉCNICA</span>
             </div>
-        ` : ''}
+            
+            <div style="position: absolute; left: ${bleed + centralizingOffset}px; top: 142px; z-index: 4;">
+              <svg width="52" height="${barHeight}" viewBox="0 0 52 ${barHeight}" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M37.28 ${pathH}H14.26C6.38 ${pathH} 0 ${pathCurveControlY} 0 ${pathVerticalLineEndY}V14.26C0 6.38001 6.38 0 14.26 0H37.28C45.16 0 51.54 6.38001 51.54 14.26V${pathVerticalLineEndY}C51.54 ${pathCurveControlY} 45.15 ${pathH} 37.28 ${pathH}Z" fill="black"/>
+              </svg>
+            </div>
+            
+            <div style="position: absolute; left: ${bleed + centralizingOffset}px; top: 142px; width: 52px; height: ${barHeight}px; display: flex; align-items: center; justify-content: center; overflow: hidden; z-index: 5;">
+              <div style="transform: rotate(-90deg); color: white; font-size: 21px; font-family: Antonio, sans-serif; font-weight: 600; white-space: nowrap; text-align: center;">${recipe.name.toUpperCase()}</div>
+            </div>
+            
+            <div style="position: absolute; left: ${61 + bleed + centralizingOffset}px; top: ${cardTop + cardPadding}px; width: 420px; box-sizing: border-box; z-index: 3;">
+                ${mainContentHtml}
+                ${observationsHtml}
+            </div>
       </div>`;
     
     const pdfElement = element.firstElementChild as HTMLElement;
@@ -249,7 +264,7 @@ export const RecipeDetails: React.FC<RecipeDetailsProps> = ({ recipe, ingredient
         margin: 0,
         filename: filename,
         image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, letterRendering: true },
+        html2canvas: { scale: 3, useCORS: true, letterRendering: true },
         jsPDF: { unit: 'px', format: [595.28, 841.89], orientation: 'portrait' },
       };
       
