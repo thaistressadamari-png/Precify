@@ -1,4 +1,3 @@
-
 import type { Recipe, Ingredient, Packaging, AppSettings, Unit } from '../types';
 
 export const convertToBaseUnitAmount = (amount: number, unit: string) => {
@@ -50,50 +49,57 @@ export const calculateCosts = (
     const operationalCosts = laborCost + energyCost + gasCost;
     const baseCost = ingredientsCost + packagingCost + operationalCosts;
 
-    const taxRate = (settings.taxPercentage || 0) / 100;
-    
-    let totalCost: number;
+    // --- Default values for filling ---
+    let totalCost = baseCost;
     let taxValue = 0;
+    let variableCostsValue = 0;
+    let finalSalePrice = 0;
+    let salePricePerUnit = 0;
+    let profitValue = 0;
 
-    if (type === 'filling') {
-        totalCost = baseCost;
-    } else { // 'recipe'
-        const divisor = 1 - taxRate;
-        totalCost = divisor > 0 && isFinite(baseCost) ? baseCost / divisor : baseCost;
-        if (isFinite(totalCost)) {
-          taxValue = totalCost - baseCost;
+    // --- Calculations for 'recipe' type ---
+    if (type === 'recipe') {
+        const taxRate = (settings.taxPercentage || 0) / 100; // t
+        const variableCostsRate = (recipe.variableCostsPercentage || 0) / 100; // v
+        const profitMarginRate = (recipe.profitMargin || 0) / 100; // m_c (markup on cost)
+
+        const denominator = 1 - taxRate - variableCostsRate;
+        
+        // Use the formula: Price = F * (1 + m_c) / (1 - t - v)
+        finalSalePrice = (denominator > 0 && isFinite(baseCost))
+            ? (baseCost * (1 + profitMarginRate)) / denominator
+            : baseCost * (1 + profitMarginRate); // Fallback if denominator is invalid
+        
+        if (!isFinite(finalSalePrice)) {
+            finalSalePrice = 0;
+        }
+
+        // Calculate monetary values based on the final sale price
+        taxValue = finalSalePrice * taxRate;
+        variableCostsValue = finalSalePrice * variableCostsRate;
+        
+        // Profit is the remaining part after all costs are subtracted from the sale price
+        profitValue = finalSalePrice - baseCost - taxValue - variableCostsValue;
+        
+        // Total Cost for display is the sum of all costs (everything except profit)
+        totalCost = baseCost + taxValue + variableCostsValue;
+
+        const yieldAmount = recipe.yieldAmount || 0;
+        if (yieldAmount > 0) {
+          salePricePerUnit = finalSalePrice / yieldAmount;
         }
     }
     
+    // --- Calculations for 'filling' type ---
     const netYieldAmount = (recipe.yieldAmount || 0) * (1 - ((recipe.evaporationPercentage || 0) / 100));
 
     let pricePerKg = 0;
     const yieldUnit = recipe.yieldUnit?.toLowerCase() || 'g';
     if ((yieldUnit.includes('g') || yieldUnit.includes('kg')) && netYieldAmount > 0) {
         const yieldInKg = yieldUnit.includes('kg') ? netYieldAmount : netYieldAmount / 1000;
-        pricePerKg = isFinite(totalCost) && yieldInKg > 0 ? totalCost / yieldInKg : 0;
-    }
-
-    let finalSalePrice = 0;
-    let salePricePerUnit = 0;
-    let profitValue = 0;
-    let costWithVariable = 0;
-
-    if (type === 'recipe') {
-        const variableCostsRate = (recipe.variableCostsPercentage || 0) / 100;
-        const profitMarginRate = (recipe.profitMargin || 0) / 100;
-        
-        const costWithVariableDivisor = 1 - variableCostsRate;
-        costWithVariable = costWithVariableDivisor > 0 ? totalCost / costWithVariableDivisor : totalCost;
-
-        const finalSalePriceDivisor = 1 - profitMarginRate;
-        finalSalePrice = finalSalePriceDivisor > 0 ? costWithVariable / finalSalePriceDivisor : costWithVariable;
-        
-        if (netYieldAmount > 0) {
-          salePricePerUnit = finalSalePrice / netYieldAmount;
-        }
-        
-        profitValue = finalSalePrice - totalCost;
+        // For fillings, totalCost is just baseCost
+        const costForFilling = (type === 'filling') ? baseCost : totalCost;
+        pricePerKg = isFinite(costForFilling) && yieldInKg > 0 ? costForFilling / yieldInKg : 0;
     }
 
     return { 
@@ -104,13 +110,13 @@ export const calculateCosts = (
         gasCost, 
         baseCost,
         taxValue,
+        variableCostsValue,
         totalCost,
         netYieldAmount,
         pricePerKg,
         finalSalePrice,
         salePricePerUnit,
         profitValue,
-        costWithVariable,
     };
 }
 

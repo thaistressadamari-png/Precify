@@ -1,4 +1,3 @@
-
 import React, { useMemo, useState } from 'react';
 import type { Recipe, Ingredient, Packaging, AppSettings } from '../types';
 import { ArrowLeftIcon } from './icons/ArrowLeftIcon';
@@ -90,6 +89,7 @@ export const RecipeDetails: React.FC<RecipeDetailsProps> = ({ recipe, ingredient
       { name: 'Energia', value: costBreakdown.energyCost, color: '#FACC15' },
       { name: 'Gás', value: costBreakdown.gasCost, color: '#A78BFA' },
       { name: 'Impostos', value: costBreakdown.taxValue, color: '#9CA3AF' },
+      { name: 'Taxas Variáveis', value: costBreakdown.variableCostsValue, color: '#34D399' },
     ];
     return data.filter(item => item.value > 0).sort((a, b) => b.value - a.value);
   }, [costBreakdown]);
@@ -286,7 +286,7 @@ export const RecipeDetails: React.FC<RecipeDetailsProps> = ({ recipe, ingredient
             {type === 'recipe' ? (
                 <>
                     <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700 text-center">
-                        <p className="text-sm text-brand-light-text dark:text-gray-400">Custo Total (c/ impostos)</p>
+                        <p className="text-sm text-brand-light-text dark:text-gray-400">Custo Total</p>
                         <p className="font-display text-4xl font-bold text-brand-text dark:text-rose-100">{formatCurrency(costBreakdown.totalCost)}</p>
                     </div>
                     <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700 text-center">
@@ -334,14 +334,14 @@ export const RecipeDetails: React.FC<RecipeDetailsProps> = ({ recipe, ingredient
                         <div className="text-right">
                             <span className="font-semibold text-brand-text dark:text-gray-200">{formatCurrency(item.value)}</span>
                             <span className="ml-2 text-sm font-mono text-gray-500 dark:text-gray-500">
-                              {costBreakdown.baseCost > 0 ? `(${(item.value / costBreakdown.baseCost * 100).toFixed(1)}%)` : '(0.0%)'}
+                              {costBreakdown.finalSalePrice > 0 ? `(${(item.value / costBreakdown.finalSalePrice * 100).toFixed(1)}%)` : '(0.0%)'}
                             </span>
                         </div>
                     </li>
                   ))}
                   <li className="flex justify-between items-center text-lg pt-2 border-t border-rose-200 dark:border-gray-600">
-                    <span className="font-bold text-brand-text dark:text-rose-100">Custo Total</span>
-                    <span className="font-bold text-brand-text dark:text-rose-100">{formatCurrency(costBreakdown.totalCost)}</span>
+                    <span className="font-bold text-brand-text dark:text-rose-100">Preço Final</span>
+                    <span className="font-bold text-brand-text dark:text-rose-100">{formatCurrency(costBreakdown.finalSalePrice)}</span>
                   </li>
                 </ul>
               </div>
@@ -354,24 +354,24 @@ export const RecipeDetails: React.FC<RecipeDetailsProps> = ({ recipe, ingredient
             {type === 'recipe' ? (
                 <ul className="space-y-2 text-sm">
                     <li className="flex justify-between items-center">
-                        <span className="text-brand-light-text dark:text-gray-400">Custo Base (Itens + Produção)</span>
+                        <span className="text-brand-light-text dark:text-gray-400">Custo de Produção (Base)</span>
                         <span className="font-mono font-semibold text-brand-text dark:text-gray-200">{formatCurrency(costBreakdown.baseCost)}</span>
                     </li>
                     <li className="flex justify-between items-center">
                         <span className="text-brand-light-text dark:text-gray-400">(+) Impostos ({settings.taxPercentage}%)</span>
                         <span className="font-mono font-semibold text-brand-text dark:text-gray-200">{formatCurrency(costBreakdown.taxValue)}</span>
                     </li>
-                    <li className="flex justify-between items-center font-bold text-base border-t border-rose-200 dark:border-gray-600 pt-1">
-                        <span className="text-brand-text dark:text-rose-100">(=) Custo Total</span>
-                        <span className="font-mono text-brand-text dark:text-rose-100">{formatCurrency(costBreakdown.totalCost)}</span>
-                    </li>
-                     <li className="flex justify-between items-center mt-2">
-                        <span className="text-brand-light-text dark:text-gray-400">(/) Custos Variáveis ({recipe.variableCostsPercentage || 0}%)</span>
-                        <span className="font-mono font-semibold text-brand-text dark:text-gray-200">{formatCurrency(costBreakdown.costWithVariable - costBreakdown.totalCost)}</span>
-                    </li>
                     <li className="flex justify-between items-center">
-                        <span className="text-brand-light-text dark:text-gray-400">(/) Margem de Lucro ({recipe.profitMargin || 0}%)</span>
-                        <span className="font-mono font-semibold text-brand-text dark:text-gray-200">{formatCurrency(costBreakdown.finalSalePrice - costBreakdown.costWithVariable)}</span>
+                        <span className="text-brand-light-text dark:text-gray-400">(+) Custos Variáveis ({recipe.variableCostsPercentage || 0}%)</span>
+                        <span className="font-mono font-semibold text-brand-text dark:text-gray-200">{formatCurrency(costBreakdown.variableCostsValue)}</span>
+                    </li>
+                     <li className="flex justify-between items-center border-t border-rose-200 dark:border-gray-600 pt-1">
+                        <span className="text-brand-text dark:text-rose-100 font-semibold">(=) Custo Total</span>
+                        <span className="font-mono text-brand-text dark:text-rose-100 font-semibold">{formatCurrency(costBreakdown.totalCost)}</span>
+                    </li>
+                    <li className="flex justify-between items-center mt-2">
+                        <span className="text-brand-light-text dark:text-gray-400">(+) Lucro Desejado ({recipe.profitMargin || 0}%)</span>
+                        <span className="font-mono font-semibold text-brand-text dark:text-gray-200">{formatCurrency(costBreakdown.profitValue)}</span>
                     </li>
                     <li className="flex justify-between items-center font-bold text-lg text-green-600 dark:text-green-400 border-t-2 border-green-200 dark:border-green-700 pt-2 mt-2">
                         <span>(=) Preço de Venda Final</span>

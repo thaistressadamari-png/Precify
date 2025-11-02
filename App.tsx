@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import type { Ingredient, Packaging, Recipe, AppSettings, Page, Unit } from './types';
+import type { Ingredient, Packaging, Recipe, AppSettings, Page, Unit, User, UserAuth } from './types';
 import { IngredientManager } from './components/IngredientManager';
 import { PackagingManager } from './components/PackagingManager';
 import { Settings } from './components/Settings';
@@ -20,6 +20,11 @@ import { BookOpenIcon } from './components/icons/BookOpenIcon';
 import { AdjustmentsHorizontalIcon } from './components/icons/AdjustmentsHorizontalIcon';
 import { FireIcon } from './components/icons/FireIcon';
 import { calculateCosts } from './components/costCalculator';
+import { LoginPage } from './components/LoginPage';
+import { LandingPage } from './components/LandingPage';
+import { ArrowRightOnRectangleIcon } from './components/icons/ArrowRightOnRectangleIcon';
+import { RegistrationPage } from './components/RegistrationPage';
+import { defaultUsers } from './components/users';
 
 const usePersistentState = <T,>(key: string, defaultValue: T): [T, React.Dispatch<React.SetStateAction<T>>] => {
   const [state, setState] = useState<T>(() => {
@@ -38,9 +43,14 @@ const usePersistentState = <T,>(key: string, defaultValue: T): [T, React.Dispatc
       if (key === 'theme') {
          window.localStorage.setItem(key, state ? 'dark' : 'light');
       } else {
-         window.localStorage.setItem(key, JSON.stringify(state));
+         if (state === null || state === undefined) {
+             window.localStorage.removeItem(key);
+         } else {
+             window.localStorage.setItem(key, JSON.stringify(state));
+         }
       }
-    } catch (error) {
+    } catch (error)
+ {
       console.error(`Error setting localStorage key "${key}":`, error);
     }
   }, [key, state]);
@@ -69,6 +79,12 @@ const App: React.FC = () => {
   const [recipes, setRecipes] = usePersistentState<Recipe[]>('recipes', defaultRecipes);
   const [fillings, setFillings] = usePersistentState<Recipe[]>('fillings', []);
   const [settings, setSettings] = usePersistentState<AppSettings>('settings', defaultSettings);
+  const [users, setUsers] = usePersistentState<UserAuth[]>('users', defaultUsers);
+  
+  const [rememberedUser, setRememberedUser] = usePersistentState<User | null>('currentUser', null);
+  const [sessionUser, setSessionUser] = useState<User | null>(null);
+  
+  const [view, setView] = useState<'landing' | 'login' | 'register'>('landing');
   
   const [recipeToEdit, setRecipeToEdit] = useState<Recipe | null>(null);
   const [recipeToView, setRecipeToView] = useState<Recipe | null>(null);
@@ -81,6 +97,8 @@ const App: React.FC = () => {
   const [highlightedIngredientId, setHighlightedIngredientId] = useState<string | null>(null);
   const [packagingToEdit, setPackagingToEdit] = useState<Packaging | null>(null);
   const [isDarkMode, setIsDarkMode] = useDarkMode();
+
+  const activeUser = rememberedUser || sessionUser;
 
   const ingredientsWithFillings = useMemo(() => {
     const fillingsAsIngredients: Ingredient[] = fillings
@@ -250,6 +268,28 @@ const App: React.FC = () => {
   const handleCancelPackagingForm = () => { setPackagingToEdit(null); setPage('packaging'); };
   const handleDeletePackaging = (packagingId: string) => { setPackaging(prev => prev.filter(p => p.id !== packagingId)); };
 
+  // --- AUTH HANDLERS ---
+  const handleLogin = (user: User, remember: boolean) => {
+    if (remember) {
+        setRememberedUser(user);
+        setSessionUser(null);
+    } else {
+        setRememberedUser(null);
+        setSessionUser(user);
+    }
+  };
+
+  const handleLogout = () => {
+    setRememberedUser(null);
+    setSessionUser(null);
+    setView('landing');
+  };
+
+  const handleRegister = (newUser: UserAuth) => {
+    setUsers(prevUsers => [...prevUsers, newUser]);
+    alert('Cadastro realizado com sucesso! Faça o login para continuar.');
+    setView('login');
+  };
 
   const renderPage = () => {
     switch (page) {
@@ -360,13 +400,39 @@ const App: React.FC = () => {
     </button>
   );
 
+  if (!activeUser) {
+    if (view === 'landing') {
+      return <LandingPage onNavigateToRegister={() => setView('register')} onNavigateToLogin={() => setView('login')} />;
+    }
+     if (view === 'register') {
+      return <RegistrationPage onRegister={handleRegister} onNavigateToLogin={() => setView('login')} />;
+    }
+    return <LoginPage 
+      onLoginSuccess={handleLogin}
+      onNavigateToLanding={() => setView('landing')}
+      onNavigateToRegister={() => setView('register')}
+      users={users}
+    />;
+  }
+
   return (
     <div className="bg-rose-50 dark:bg-gray-900 min-h-screen text-brand-text dark:text-gray-200 font-sans transition-colors">
       <div className="container mx-auto px-4 py-8">
+        <header className="flex justify-between items-center mb-8 flex-wrap gap-4">
+            <h1 className="font-display text-3xl font-bold text-brand-primary">Precify</h1>
+             <div className="flex items-center gap-4">
+              <span className="text-brand-light-text dark:text-gray-300 hidden sm:block">
+                  Olá, <span className="font-semibold text-brand-text dark:text-rose-100">{activeUser.name.split(' ')[0]}</span>
+              </span>
+              <button onClick={() => setIsDarkMode(!isDarkMode)} className="flex items-center justify-center gap-2 p-2 rounded-lg text-sm font-medium transition-colors text-brand-light-text dark:text-gray-400 hover:bg-rose-100 dark:hover:bg-gray-700">
+                  {isDarkMode ? <SunIcon className="w-6 h-6" /> : <MoonIcon className="w-6 h-6" />}
+                  <span className="hidden md:block">{isDarkMode ? 'Modo Claro' : 'Modo Escuro'}</span>
+              </button>
+            </div>
+        </header>
         <div className="lg:grid lg:grid-cols-12 lg:gap-8">
           <aside className="lg:col-span-2 mb-8 lg:mb-0">
             <div className="sticky top-8">
-              <h1 className="font-display text-2xl font-bold text-brand-primary mb-6 hidden lg:block">Precify</h1>
               <nav className="flex lg:flex-col justify-around lg:justify-start lg:space-y-2 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-2 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700">
                 <NavItem label="Dashboard" targetPage="dashboard" icon={ChartBarIcon}/>
                 <NavItem label="Ingredientes" targetPage="ingredients" icon={ShoppingBagIcon}/>
@@ -374,10 +440,15 @@ const App: React.FC = () => {
                 <NavItem label="Receitas" targetPage="recipes" icon={BookOpenIcon}/>
                 <NavItem label="Recheios" targetPage="fillings" icon={FireIcon}/>
                 <NavItem label="Ajustes" targetPage="settings" icon={AdjustmentsHorizontalIcon}/>
-                 <div className="hidden lg:block border-t border-rose-200 dark:border-gray-700 my-2"></div>
-                <button onClick={() => setIsDarkMode(!isDarkMode)} className="flex flex-col items-center justify-center p-2 rounded-lg text-sm font-medium transition-colors w-full text-left text-brand-light-text dark:text-gray-400 hover:bg-rose-100 dark:hover:bg-gray-700 lg:flex-row lg:justify-start lg:gap-3 lg:px-3 lg:py-2">
-                    {isDarkMode ? <SunIcon className="w-6 h-6" /> : <MoonIcon className="w-6 h-6" />}
-                    <span className="hidden md:block mt-1 text-xs lg:mt-0 lg:text-base">{isDarkMode ? 'Modo Claro' : 'Modo Escuro'}</span>
+
+                 <div className="border-t border-rose-100 dark:border-gray-700 my-2 hidden lg:block"></div>
+
+                <button 
+                  onClick={handleLogout}
+                  className="flex flex-col items-center justify-center p-2 rounded-lg text-sm font-medium transition-colors w-full text-left lg:flex-row lg:justify-start lg:gap-3 lg:px-3 lg:py-2 text-brand-light-text dark:text-gray-400 hover:bg-rose-100 dark:hover:bg-gray-700"
+                >
+                  <ArrowRightOnRectangleIcon className="w-6 h-6"/>
+                  <span className="mt-1 text-xs lg:mt-0 lg:text-base hidden md:block">Sair</span>
                 </button>
               </nav>
             </div>

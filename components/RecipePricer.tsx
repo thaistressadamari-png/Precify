@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import type { Ingredient, Packaging, Recipe, RecipeIngredient, RecipePackaging, Unit, AppSettings, IngredientSection } from '../types';
 import { PlusIcon } from './icons/PlusIcon';
@@ -120,34 +119,41 @@ const TimeInput: React.FC<{
     onMinutesChange: (minutes: number) => void;
     cost: number;
 }> = ({ label, totalMinutes, onMinutesChange, cost }) => {
-    const [timeValue, setTimeValue] = useState(0);
+    const [timeValue, setTimeValue] = useState<string>('0');
     const [timeUnit, setTimeUnit] = useState<'minutos' | 'horas'>('minutos');
 
     useEffect(() => {
+        const currentMinutesInState = (parseFloat(timeValue) || 0) * (timeUnit === 'horas' ? 60 : 1);
+        if (Math.abs(currentMinutesInState - totalMinutes) < 1e-9) {
+            return;
+        }
+
         const isHoursSuitable = totalMinutes >= 60 && totalMinutes % 60 === 0;
         const currentUnit = isHoursSuitable ? 'horas' : 'minutos';
         const currentValue = isHoursSuitable ? totalMinutes / 60 : totalMinutes;
         setTimeUnit(currentUnit);
-        setTimeValue(currentValue);
+        setTimeValue(String(currentValue));
     }, [totalMinutes]);
 
     const handleValueChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const newValue = parseFloat(e.target.value) || 0;
-        setTimeValue(newValue);
-        onMinutesChange(timeUnit === 'horas' ? newValue * 60 : newValue);
+        const value = e.target.value;
+        setTimeValue(value);
+        const numericValue = parseFloat(value) || 0;
+        onMinutesChange(timeUnit === 'horas' ? numericValue * 60 : numericValue);
     };
 
     const handleUnitChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const newUnit = e.target.value as 'minutos' | 'horas';
         const oldUnit = timeUnit;
+        
+        const currentMinutes = (parseFloat(timeValue) || 0) * (oldUnit === 'horas' ? 60 : 1);
+        
         setTimeUnit(newUnit);
         
-        const currentMinutes = oldUnit === 'horas' ? timeValue * 60 : timeValue;
-        
         if (newUnit === 'horas') {
-            setTimeValue(currentMinutes / 60);
+            setTimeValue(String(currentMinutes / 60));
         } else {
-            setTimeValue(currentMinutes);
+            setTimeValue(String(currentMinutes));
         }
         onMinutesChange(currentMinutes);
     };
@@ -634,12 +640,12 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
                         <div>
                             <label className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Custos Variáveis (%)</label>
                             <input type="number" name="variableCostsPercentage" value={recipe.variableCostsPercentage || ''} onChange={handleInputChange} className={inputFieldClasses} placeholder="10" min="0" step="any" />
-                            <p className="text-xs text-brand-light-text dark:text-gray-500 mt-1">Ex: Taxas de cartão/delivery, comissões. Aplicado sobre o custo total com impostos.</p>
+                            <p className="text-xs text-brand-light-text dark:text-gray-500 mt-1">Soma das taxas percentuais (ex: cartão, delivery) que incidem sobre o PREÇO DE VENDA FINAL.</p>
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Margem de Lucro Desejada (%)</label>
-                            <input type="number" name="profitMargin" value={recipe.profitMargin || ''} onChange={handleInputChange} className={inputFieldClasses} placeholder="30" min="0" step="any" />
-                            <p className="text-xs text-brand-light-text dark:text-gray-500 mt-1">Sua margem de lucro sobre o preço de venda final.</p>
+                            <label className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Lucro Desejado (%)</label>
+                            <input type="number" name="profitMargin" value={recipe.profitMargin || ''} onChange={handleInputChange} className={inputFieldClasses} placeholder="100" min="0" step="any" />
+                            <p className="text-xs text-brand-light-text dark:text-gray-500 mt-1">Percentual de lucro calculado sobre o custo de produção (ingredientes, mão de obra, etc).</p>
                         </div>
                       </>
                     )}
@@ -649,7 +655,7 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
                     {type === 'recipe' ? (
                         <div className="space-y-3">
                             <div className="p-4 bg-rose-50 dark:bg-gray-700/50 rounded-lg">
-                                <p className="text-sm text-brand-light-text dark:text-gray-400">Custo Total da Receita (c/ impostos)</p>
+                                <p className="text-sm text-brand-light-text dark:text-gray-400">Custo Total da Receita</p>
                                 <p className="text-3xl font-bold text-brand-text dark:text-rose-100">{formatCurrency(calculatedCosts.totalCost)}</p>
                             </div>
                             <div className="p-4 bg-green-50 dark:bg-green-900/50 rounded-lg">

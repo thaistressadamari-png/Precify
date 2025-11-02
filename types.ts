@@ -1,6 +1,16 @@
 export type Unit = 'g' | 'kg' | 'ml' | 'l' | 'un';
 export type PackagingUnit = 'un' | 'pacote' | 'rolo' | 'm';
 
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+}
+
+export interface UserAuth extends User {
+  password?: string;
+}
+
 export interface Purchase {
   id: string;
   date: string;

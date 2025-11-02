@@ -38,7 +38,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onUpdateSettings }
             <div>
                 <label htmlFor="taxPercentage" className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Imposto (%)</label>
                 <input type="number" name="taxPercentage" id="taxPercentage" value={settings.taxPercentage || ''} onChange={handleInputChange} className={inputFieldClasses} placeholder="8" step="0.01" min="0"/>
-                <p className="text-xs text-brand-light-text dark:text-gray-500 mt-1">Ex: SIMPLES Nacional. Incide sobre o custo base da receita.</p>
+                <p className="text-xs text-brand-light-text dark:text-gray-500 mt-1">Alíquota de imposto (ex: SIMPLES Nacional) que incide sobre o PREÇO DE VENDA FINAL.</p>
             </div>
             <div>
                 <label htmlFor="ingredientOutdatedDays" className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Notificar preço desatualizado (dias)</label>
@@ -52,14 +52,14 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onUpdateSettings }
         <h2 className="font-display text-2xl text-brand-text dark:text-rose-100 mb-4">Fórmulas Utilizadas</h2>
         <div className="space-y-4 text-sm text-brand-light-text dark:text-gray-300">
           <div className="p-4 bg-rose-50 dark:bg-gray-700/50 rounded-lg border border-rose-100 dark:border-gray-600">
-            <p className="font-semibold text-brand-text dark:text-gray-100">Custo Total da Receita</p>
-            <code className="block bg-rose-100 dark:bg-gray-600 p-2 rounded-md my-1 text-brand-text dark:text-rose-100 text-xs md:text-sm">Custo Base / (1 - %Impostos)</code>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Onde "Custo Base" é a soma de todos os custos de produção (ingredientes, embalagens, mão de obra, etc.).</p>
+            <p className="font-semibold text-brand-text dark:text-gray-100">Preço de Venda da Receita</p>
+            <code className="block bg-rose-100 dark:bg-gray-600 p-2 rounded-md my-1 text-brand-text dark:text-rose-100 text-xs md:text-sm">Preço = Custo de Produção * (1 + %Lucro) / (1 - %Impostos - %Custos Variáveis)</code>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">"Custo de Produção" é a soma de todos os custos diretos. Impostos e custos variáveis são calculados sobre o preço de venda final para garantir a margem de lucro desejada.</p>
           </div>
           <div className="p-4 bg-rose-50 dark:bg-gray-700/50 rounded-lg border border-rose-100 dark:border-gray-600">
             <p className="font-semibold text-brand-text dark:text-gray-100">Custo Total do Recheio</p>
-            <code className="block bg-rose-100 dark:bg-gray-600 p-2 rounded-md my-1 text-brand-text dark:text-rose-100 text-xs md:text-sm">Custo Base (sem impostos)</code>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Para recheios, o imposto não é aplicado diretamente no custo, pois ele será parte do custo da receita final.</p>
+            <code className="block bg-rose-100 dark:bg-gray-600 p-2 rounded-md my-1 text-brand-text dark:text-rose-100 text-xs md:text-sm">Custo de Produção (sem impostos ou taxas)</code>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Para recheios, o imposto não é aplicado diretamente, pois ele se tornará parte do custo da receita final que o utiliza.</p>
           </div>
         </div>
       </div>
