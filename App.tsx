@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import type { Ingredient, Packaging, Recipe, AppSettings, Page, Unit, User, UserAuth } from './types';
+import type { Ingredient, Packaging, Recipe, AppSettings, Page, Unit, User } from './types';
 import { IngredientManager } from './components/IngredientManager';
 import { PackagingManager } from './components/PackagingManager';
 import { Settings } from './components/Settings';
@@ -24,39 +24,76 @@ import { LoginPage } from './components/LoginPage';
 import { LandingPage } from './components/LandingPage';
 import { ArrowRightOnRectangleIcon } from './components/icons/ArrowRightOnRectangleIcon';
 import { RegistrationPage } from './components/RegistrationPage';
-import { defaultUsers } from './components/users';
+import { auth, db } from './components/firebase';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 
-const usePersistentState = <T,>(key: string, defaultValue: T): [T, React.Dispatch<React.SetStateAction<T>>] => {
+const usePersistentState = <T,>(key: string, defaultValue: T, userId?: string | null): [T, React.Dispatch<React.SetStateAction<T>>] => {
+  const isTheme = key === 'theme';
+  const getStorageKey = (uid: string | null | undefined) => isTheme ? 'theme' : uid ? `${key}_${uid}` : null;
+
   const [state, setState] = useState<T>(() => {
+    const initialKey = getStorageKey(userId);
     try {
-      const storedValue = window.localStorage.getItem(key);
-      if (key === 'theme') return (storedValue === 'dark') as T;
+      if (isTheme) {
+        const storedTheme = window.localStorage.getItem('theme');
+        return (storedTheme === 'dark') as T;
+      }
+      if (!initialKey) return defaultValue;
+
+      const storedValue = window.localStorage.getItem(initialKey);
       return storedValue ? JSON.parse(storedValue) : defaultValue;
     } catch (error) {
-      console.error(`Error reading localStorage key "${key}":`, error);
+      console.error(`Error reading localStorage key "${initialKey}":`, error);
       return defaultValue;
     }
   });
 
+  // Effect to save state when it or the user changes
   useEffect(() => {
+    const storageKey = getStorageKey(userId);
     try {
-      if (key === 'theme') {
-         window.localStorage.setItem(key, state ? 'dark' : 'light');
-      } else {
-         if (state === null || state === undefined) {
-             window.localStorage.removeItem(key);
-         } else {
-             window.localStorage.setItem(key, JSON.stringify(state));
-         }
+      if (isTheme) {
+        window.localStorage.setItem('theme', state ? 'dark' : 'light');
+        return;
       }
-    } catch (error)
- {
-      console.error(`Error setting localStorage key "${key}":`, error);
+      if (!storageKey) return;
+
+      if (state === null || state === undefined) {
+        window.localStorage.removeItem(storageKey);
+      } else {
+        window.localStorage.setItem(storageKey, JSON.stringify(state));
+      }
+    } catch (error) {
+      console.error(`Error setting localStorage key "${storageKey}":`, error);
     }
-  }, [key, state]);
+  }, [state, userId, key, isTheme]);
+  
+  // Effect to reload data from localStorage when the user ID changes
+  useEffect(() => {
+    if (isTheme) return; // Theme is global, not user-dependent
+
+    const storageKey = getStorageKey(userId);
+    if (!storageKey) {
+      setState(defaultValue); // Reset to default when logged out
+      return;
+    }
+    try {
+      const storedValue = window.localStorage.getItem(storageKey);
+      setState(storedValue ? JSON.parse(storedValue) : defaultValue);
+    } catch (error) {
+      console.error(`Error reloading state for key "${storageKey}":`, error);
+      setState(defaultValue);
+    }
+    // Intentionally omitting defaultValue from deps array to prevent potential loops
+    // if it's an object/array that is not memoized by the parent component.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, key, isTheme]);
+
 
   return [state, setState];
 };
+
 
 const useDarkMode = () => {
   const [isDarkMode, setIsDarkMode] = usePersistentState<boolean>('theme', document.documentElement.classList.contains('dark'));
@@ -73,16 +110,17 @@ const useDarkMode = () => {
 };
 
 const App: React.FC = () => {
-  const [page, setPage] = useState<Page>('dashboard');
-  const [ingredients, setIngredients] = usePersistentState<Ingredient[]>('ingredients', defaultIngredients);
-  const [packaging, setPackaging] = usePersistentState<Packaging[]>('packaging', defaultPackaging);
-  const [recipes, setRecipes] = usePersistentState<Recipe[]>('recipes', defaultRecipes);
-  const [fillings, setFillings] = usePersistentState<Recipe[]>('fillings', []);
-  const [settings, setSettings] = usePersistentState<AppSettings>('settings', defaultSettings);
-  const [users, setUsers] = usePersistentState<UserAuth[]>('users', defaultUsers);
+  const [activeUser, setActiveUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   
-  const [rememberedUser, setRememberedUser] = usePersistentState<User | null>('currentUser', null);
-  const [sessionUser, setSessionUser] = useState<User | null>(null);
+  const userId = activeUser?.id || null;
+  
+  const [page, setPage] = useState<Page>('dashboard');
+  const [ingredients, setIngredients] = usePersistentState<Ingredient[]>('ingredients', defaultIngredients, userId);
+  const [packaging, setPackaging] = usePersistentState<Packaging[]>('packaging', defaultPackaging, userId);
+  const [recipes, setRecipes] = usePersistentState<Recipe[]>('recipes', defaultRecipes, userId);
+  const [fillings, setFillings] = usePersistentState<Recipe[]>('fillings', [], userId);
+  const [settings, setSettings] = usePersistentState<AppSettings>('settings', defaultSettings, userId);
   
   const [view, setView] = useState<'landing' | 'login' | 'register'>('landing');
   
@@ -98,7 +136,37 @@ const App: React.FC = () => {
   const [packagingToEdit, setPackagingToEdit] = useState<Packaging | null>(null);
   const [isDarkMode, setIsDarkMode] = useDarkMode();
 
-  const activeUser = rememberedUser || sessionUser;
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        try {
+            const userDocRef = doc(db, "users", user.uid);
+            const userDocSnap = await getDoc(userDocRef);
+            if (userDocSnap.exists()) {
+              setActiveUser({
+                id: user.uid,
+                email: user.email!,
+                name: userDocSnap.data().name,
+              });
+            } else {
+               console.error("No user document found in Firestore! Forcing logout.");
+               await signOut(auth);
+               setActiveUser(null);
+            }
+        } catch (error) {
+            console.error("Error fetching user data:", error);
+            await signOut(auth);
+            setActiveUser(null);
+        }
+      } else {
+        setActiveUser(null);
+        setPage('dashboard');
+        setView('landing');
+      }
+      setAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
 
   const ingredientsWithFillings = useMemo(() => {
     const fillingsAsIngredients: Ingredient[] = fillings
@@ -118,7 +186,7 @@ const App: React.FC = () => {
   }, [ingredients, fillings, packaging, settings]);
 
   useEffect(() => {
-    // One-time data migration for ingredients to ensure each purchase has a unit.
+    if (!userId) return; // Don't run migrations if no user
     const needsIngredientMigration = ingredients.some(ing => !ing.history || ing.history.some(p => p.unit === undefined));
     if (needsIngredientMigration) {
         const migratedIngredients = ingredients.map(ing => {
@@ -150,7 +218,6 @@ const App: React.FC = () => {
         setIngredients(migratedIngredients);
     }
     
-    // One-time data migration for recipes to add evaporationPercentage
     const needsRecipeMigration = recipes.some(r => r.evaporationPercentage === undefined);
     if (needsRecipeMigration) {
       setRecipes(prev => prev.map(r => r.evaporationPercentage === undefined ? { ...r, evaporationPercentage: 0 } : r));
@@ -160,7 +227,7 @@ const App: React.FC = () => {
     if (needsFillingMigration) {
       setFillings(prev => prev.map(r => r.evaporationPercentage === undefined ? { ...r, evaporationPercentage: 0 } : r));
     }
-}, []);
+}, [userId, ingredients, recipes, fillings, setIngredients, setRecipes, setFillings]);
 
 
   // --- RECIPE HANDLERS ---
@@ -269,27 +336,10 @@ const App: React.FC = () => {
   const handleDeletePackaging = (packagingId: string) => { setPackaging(prev => prev.filter(p => p.id !== packagingId)); };
 
   // --- AUTH HANDLERS ---
-  const handleLogin = (user: User, remember: boolean) => {
-    if (remember) {
-        setRememberedUser(user);
-        setSessionUser(null);
-    } else {
-        setRememberedUser(null);
-        setSessionUser(user);
-    }
-  };
-
   const handleLogout = () => {
-    setRememberedUser(null);
-    setSessionUser(null);
-    setView('landing');
+    signOut(auth).catch((error) => console.error('Logout Error:', error));
   };
 
-  const handleRegister = (newUser: UserAuth) => {
-    setUsers(prevUsers => [...prevUsers, newUser]);
-    alert('Cadastro realizado com sucesso! Faça o login para continuar.');
-    setView('login');
-  };
 
   const renderPage = () => {
     switch (page) {
@@ -400,18 +450,24 @@ const App: React.FC = () => {
     </button>
   );
 
+  if (authLoading) {
+    return (
+        <div className="bg-rose-50 dark:bg-gray-900 min-h-screen flex items-center justify-center">
+            <h1 className="font-display text-4xl font-bold text-brand-primary animate-pulse">Precify</h1>
+        </div>
+    );
+  }
+
   if (!activeUser) {
     if (view === 'landing') {
       return <LandingPage onNavigateToRegister={() => setView('register')} onNavigateToLogin={() => setView('login')} />;
     }
      if (view === 'register') {
-      return <RegistrationPage onRegister={handleRegister} onNavigateToLogin={() => setView('login')} />;
+      return <RegistrationPage onRegisterSuccess={() => setView('login')} onNavigateToLogin={() => setView('login')} />;
     }
     return <LoginPage 
-      onLoginSuccess={handleLogin}
       onNavigateToLanding={() => setView('landing')}
       onNavigateToRegister={() => setView('register')}
-      users={users}
     />;
   }
 

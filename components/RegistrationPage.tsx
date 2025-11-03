@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
-import type { UserAuth } from '../types';
+import { auth, db, googleProvider } from './firebase';
+import { createUserWithEmailAndPassword, signInWithPopup } from 'firebase/auth';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { GoogleIcon } from './icons/GoogleIcon';
 
 interface RegistrationPageProps {
-  onRegister: (user: UserAuth) => void;
+  onRegisterSuccess: () => void;
   onNavigateToLogin: () => void;
 }
 
@@ -24,7 +27,7 @@ const formatPhone = (value: string) => {
 };
 
 
-export const RegistrationPage: React.FC<RegistrationPageProps> = ({ onRegister, onNavigateToLogin }) => {
+export const RegistrationPage: React.FC<RegistrationPageProps> = ({ onRegisterSuccess, onNavigateToLogin }) => {
   const [formData, setFormData] = useState({
     fullName: '',
     phone: '',
@@ -34,6 +37,8 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ onRegister, 
     confirmPassword: '',
   });
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -46,7 +51,7 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ onRegister, 
     setFormData(prev => ({ ...prev, [name]: formattedValue }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -59,15 +64,58 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ onRegister, 
         return;
     }
 
-    const newUser: UserAuth = {
-        id: new Date().toISOString(),
-        name: formData.fullName,
-        email: formData.email,
-        password: formData.password,
-    };
-    
-    onRegister(newUser);
+    setLoading(true);
+    try {
+        const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
+        const user = userCredential.user;
+        
+        await setDoc(doc(db, "users", user.uid), {
+            name: formData.fullName,
+            email: formData.email,
+            phone: formData.phone,
+            cpf: formData.cpf,
+        });
+
+        alert('Cadastro realizado com sucesso! Faça o login para continuar.');
+        onRegisterSuccess();
+    } catch (error: any) {
+        if (error.code === 'auth/email-already-in-use') {
+            setError('Este e-mail já está em uso.');
+        } else {
+            setError('Ocorreu um erro ao criar a conta. Tente novamente.');
+            console.error(error);
+        }
+    } finally {
+        setLoading(false);
+    }
   };
+
+  const handleGoogleSignUp = async () => {
+    setError('');
+    setGoogleLoading(true);
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const user = result.user;
+
+      const userDocRef = doc(db, "users", user.uid);
+      const userDocSnap = await getDoc(userDocRef);
+
+      if (!userDocSnap.exists()) {
+        await setDoc(userDocRef, {
+          name: user.displayName,
+          email: user.email,
+        });
+      }
+      // onAuthStateChanged in App.tsx will handle the rest,
+      // leading to the main app screen.
+    } catch (error: any) {
+      setError('Falha ao se cadastrar com o Google. Tente novamente.');
+      console.error('Google Sign-up error:', error);
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
 
   const inputClasses = "mt-1 block w-full px-3 py-3 bg-white dark:bg-gray-700 dark:text-gray-200 border border-rose-200 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-secondary focus:border-brand-secondary";
 
@@ -81,27 +129,48 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ onRegister, 
         <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-8 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700">
           <h2 className="text-2xl font-bold text-brand-text dark:text-rose-100 mb-2 text-center">Crie sua Conta</h2>
           <p className="text-center text-brand-light-text dark:text-gray-400 mb-6">É rápido e fácil.</p>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <input type="text" name="fullName" value={formData.fullName} onChange={handleInputChange} placeholder="Nome Completo" required className={inputClasses} />
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <input type="tel" name="phone" value={formData.phone} onChange={handleInputChange} placeholder="Telefone de Contato" required className={inputClasses} />
-              <input type="text" name="cpf" value={formData.cpf} onChange={handleInputChange} placeholder="CPF" required className={inputClasses} />
-            </div>
-            <input type="email" name="email" value={formData.email} onChange={handleInputChange} placeholder="E-mail" required autoComplete="email" className={inputClasses} />
-            <input type="password" name="password" value={formData.password} onChange={handleInputChange} placeholder="Senha" required autoComplete="new-password" className={inputClasses} />
-            <input type="password" name="confirmPassword" value={formData.confirmPassword} onChange={handleInputChange} placeholder="Confirmar Senha" required autoComplete="new-password" className={inputClasses} />
-            
-            {error && <p className="text-sm text-red-600 dark:text-red-400 text-center">{error}</p>}
+          
+          <div className="space-y-4">
+            <button
+              type="button"
+              onClick={handleGoogleSignUp}
+              disabled={loading || googleLoading}
+              className="w-full flex items-center justify-center gap-3 py-3 px-4 border border-gray-300 dark:border-gray-500 rounded-lg shadow-sm text-sm font-bold text-brand-text dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-secondary transition-transform transform hover:scale-105 disabled:opacity-50"
+            >
+              <GoogleIcon />
+              {googleLoading ? 'Aguarde...' : 'Cadastrar com Google'}
+            </button>
 
-            <div>
-              <button
-                type="submit"
-                className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-md text-sm font-bold text-white bg-brand-primary hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rose-500 transition-transform transform hover:scale-105"
-              >
-                Criar Conta
-              </button>
+            <div className="flex items-center">
+              <div className="flex-grow border-t border-rose-200 dark:border-gray-600"></div>
+              <span className="flex-shrink mx-4 text-sm text-brand-light-text dark:text-gray-400">OU</span>
+              <div className="flex-grow border-t border-rose-200 dark:border-gray-600"></div>
             </div>
-          </form>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <input type="text" name="fullName" value={formData.fullName} onChange={handleInputChange} placeholder="Nome Completo" required className={inputClasses} />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <input type="tel" name="phone" value={formData.phone} onChange={handleInputChange} placeholder="Telefone de Contato" required className={inputClasses} />
+                <input type="text" name="cpf" value={formData.cpf} onChange={handleInputChange} placeholder="CPF" required className={inputClasses} />
+              </div>
+              <input type="email" name="email" value={formData.email} onChange={handleInputChange} placeholder="E-mail" required autoComplete="email" className={inputClasses} />
+              <input type="password" name="password" value={formData.password} onChange={handleInputChange} placeholder="Senha (mín. 6 caracteres)" required autoComplete="new-password" className={inputClasses} />
+              <input type="password" name="confirmPassword" value={formData.confirmPassword} onChange={handleInputChange} placeholder="Confirmar Senha" required autoComplete="new-password" className={inputClasses} />
+              
+              {error && <p className="text-sm text-red-600 dark:text-red-400 text-center">{error}</p>}
+
+              <div>
+                <button
+                  type="submit"
+                  disabled={loading || googleLoading}
+                  className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-md text-sm font-bold text-white bg-brand-primary hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rose-500 transition-transform transform hover:scale-105 disabled:bg-rose-300 disabled:cursor-not-allowed"
+                >
+                  {loading ? 'Criando...' : 'Criar Conta com E-mail'}
+                </button>
+              </div>
+            </form>
+          </div>
+
            <div className="text-center mt-6">
               <p className="text-sm text-brand-light-text dark:text-gray-400">
                 Já tem uma conta?{' '}

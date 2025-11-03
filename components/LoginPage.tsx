@@ -1,32 +1,69 @@
 import React, { useState } from 'react';
-import type { User, UserAuth } from '../types';
 import { ArrowLeftIcon } from './icons/ArrowLeftIcon';
+import { signInWithEmailAndPassword, signInWithPopup } from 'firebase/auth';
+import { auth, setAuthPersistence, googleProvider, db } from './firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { GoogleIcon } from './icons/GoogleIcon';
 
 interface LoginPageProps {
-  onLoginSuccess: (user: User, remember: boolean) => void;
   onNavigateToLanding: () => void;
   onNavigateToRegister: () => void;
-  users: UserAuth[];
 }
 
-export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onNavigateToLanding, onNavigateToRegister, users }) => {
+export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateToLanding, onNavigateToRegister }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+    setError('');
+    setLoading(true);
 
-    if (user && user.password === password) {
-      setError('');
-      const { password, ...userToReturn } = user;
-      onLoginSuccess(userToReturn, rememberMe);
-    } else {
-      setError('E-mail ou senha incorretos. Tente novamente.');
-      setPassword('');
+    try {
+        await setAuthPersistence(rememberMe);
+        await signInWithEmailAndPassword(auth, email, password);
+        // onAuthStateChanged in App.tsx will handle the rest
+    } catch (error: any) {
+        if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+            setError('E-mail ou senha incorretos. Tente novamente.');
+        } else {
+            setError('Ocorreu um erro ao fazer login. Tente novamente.');
+            console.error(error);
+        }
+        setPassword('');
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setError('');
+    setGoogleLoading(true);
+    try {
+      await setAuthPersistence(true); // Always remember Google sign-in
+      const result = await signInWithPopup(auth, googleProvider);
+      const user = result.user;
+
+      // Check if user exists in Firestore, if not, create a document
+      const userDocRef = doc(db, "users", user.uid);
+      const userDocSnap = await getDoc(userDocRef);
+
+      if (!userDocSnap.exists()) {
+        await setDoc(userDocRef, {
+          name: user.displayName,
+          email: user.email,
+        });
+      }
+      // onAuthStateChanged will handle navigation
+    } catch (error: any) {
+      setError('Falha ao fazer login com o Google. Tente novamente.');
+      console.error('Google Sign-in error:', error);
+    } finally {
+      setGoogleLoading(false);
     }
   };
 
@@ -43,61 +80,82 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onNavigate
           </button>
           <h2 className="text-2xl font-bold text-brand-text dark:text-rose-100 mb-2 text-center">Bem-vindo(a)!</h2>
           <p className="text-center text-brand-light-text dark:text-gray-400 mb-6">Faça login para continuar.</p>
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-brand-light-text dark:text-gray-400 sr-only">E-mail</label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="mt-1 block w-full px-3 py-3 bg-white dark:bg-gray-700 dark:text-gray-200 border border-rose-200 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-secondary focus:border-brand-secondary"
-                placeholder="seu@email.com"
-              />
-            </div>
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-brand-light-text dark:text-gray-400 sr-only">Senha</label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="mt-1 block w-full px-3 py-3 bg-white dark:bg-gray-700 dark:text-gray-200 border border-rose-200 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-secondary focus:border-brand-secondary"
-                placeholder="********"
-              />
-            </div>
+          
+          <div className="space-y-4">
+            <button
+              type="button"
+              onClick={handleGoogleSignIn}
+              disabled={loading || googleLoading}
+              className="w-full flex items-center justify-center gap-3 py-3 px-4 border border-gray-300 dark:border-gray-500 rounded-lg shadow-sm text-sm font-bold text-brand-text dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-secondary transition-transform transform hover:scale-105 disabled:opacity-50"
+            >
+              <GoogleIcon />
+              {googleLoading ? 'Aguarde...' : 'Entrar com Google'}
+            </button>
 
             <div className="flex items-center">
-              <input
-                id="remember-me"
-                name="remember-me"
-                type="checkbox"
-                checked={rememberMe}
-                onChange={(e) => setRememberMe(e.target.checked)}
-                className="h-4 w-4 text-brand-primary focus:ring-brand-secondary border-gray-300 dark:border-gray-500 rounded"
-              />
-              <label htmlFor="remember-me" className="ml-2 block text-sm text-brand-light-text dark:text-gray-400">
-                Salvar login
-              </label>
+              <div className="flex-grow border-t border-rose-200 dark:border-gray-600"></div>
+              <span className="flex-shrink mx-4 text-sm text-brand-light-text dark:text-gray-400">OU</span>
+              <div className="flex-grow border-t border-rose-200 dark:border-gray-600"></div>
             </div>
 
-            {error && <p className="text-sm text-red-600 dark:text-red-400 text-center">{error}</p>}
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div>
+                <label htmlFor="email" className="block text-sm font-medium text-brand-light-text dark:text-gray-400 sr-only">E-mail</label>
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  autoComplete="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="mt-1 block w-full px-3 py-3 bg-white dark:bg-gray-700 dark:text-gray-200 border border-rose-200 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-secondary focus:border-brand-secondary"
+                  placeholder="seu@email.com"
+                />
+              </div>
+              <div>
+                <label htmlFor="password" className="block text-sm font-medium text-brand-light-text dark:text-gray-400 sr-only">Senha</label>
+                <input
+                  id="password"
+                  name="password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="mt-1 block w-full px-3 py-3 bg-white dark:bg-gray-700 dark:text-gray-200 border border-rose-200 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-secondary focus:border-brand-secondary"
+                  placeholder="********"
+                />
+              </div>
 
-            <div>
-              <button
-                type="submit"
-                className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-md text-sm font-bold text-white bg-brand-primary hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rose-500 transition-transform transform hover:scale-105"
-              >
-                Entrar
-              </button>
-            </div>
-          </form>
+              <div className="flex items-center">
+                <input
+                  id="remember-me"
+                  name="remember-me"
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="h-4 w-4 text-brand-primary focus:ring-brand-secondary border-gray-300 dark:border-gray-500 rounded"
+                />
+                <label htmlFor="remember-me" className="ml-2 block text-sm text-brand-light-text dark:text-gray-400">
+                  Salvar login
+                </label>
+              </div>
+
+              {error && <p className="text-sm text-red-600 dark:text-red-400 text-center">{error}</p>}
+
+              <div>
+                <button
+                  type="submit"
+                  disabled={loading || googleLoading}
+                  className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-md text-sm font-bold text-white bg-brand-primary hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rose-500 transition-transform transform hover:scale-105 disabled:bg-rose-300 disabled:cursor-not-allowed"
+                >
+                  {loading ? 'Entrando...' : 'Entrar com E-mail'}
+                </button>
+              </div>
+            </form>
+          </div>
+
            <div className="text-center mt-6">
               <p className="text-sm text-brand-light-text dark:text-gray-400">
                 Não tem uma conta?{' '}
