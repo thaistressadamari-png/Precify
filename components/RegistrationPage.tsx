@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { auth, db, googleProvider } from './firebase';
-import { createUserWithEmailAndPassword, signInWithPopup } from 'firebase/auth';
+import { sendSignInLinkToEmail, signInWithPopup } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { GoogleIcon } from './icons/GoogleIcon';
 
@@ -8,15 +8,6 @@ interface RegistrationPageProps {
   onRegisterSuccess: () => void;
   onNavigateToLogin: () => void;
 }
-
-const formatCPF = (value: string) => {
-  return value
-    .replace(/\D/g, '')
-    .replace(/(\d{3})(\d)/, '$1.$2')
-    .replace(/(\d{3})(\d)/, '$1.$2')
-    .replace(/(\d{3})(\d{1,2})/, '$1-$2')
-    .slice(0, 14);
-};
 
 const formatPhone = (value: string) => {
   return value
@@ -26,26 +17,21 @@ const formatPhone = (value: string) => {
     .slice(0, 15);
 };
 
-
 export const RegistrationPage: React.FC<RegistrationPageProps> = ({ onRegisterSuccess, onNavigateToLogin }) => {
   const [formData, setFormData] = useState({
     fullName: '',
     phone: '',
-    cpf: '',
     email: '',
-    password: '',
-    confirmPassword: '',
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [linkSent, setLinkSent] = useState(false);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     let formattedValue = value;
-    if (name === 'cpf') {
-      formattedValue = formatCPF(value);
-    } else if (name === 'phone') {
+    if (name === 'phone') {
       formattedValue = formatPhone(value);
     }
     setFormData(prev => ({ ...prev, [name]: formattedValue }));
@@ -54,39 +40,31 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ onRegisterSu
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-
-    if (formData.password !== formData.confirmPassword) {
-      setError('As senhas não coincidem.');
-      return;
-    }
-    if (formData.password.length < 6) {
-        setError('A senha deve ter pelo menos 6 caracteres.');
-        return;
-    }
-
     setLoading(true);
-    try {
-        const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
-        const user = userCredential.user;
-        
-        await setDoc(doc(db, "users", user.uid), {
-            name: formData.fullName,
-            email: formData.email,
-            phone: formData.phone,
-            cpf: formData.cpf,
-        });
+    setLinkSent(false);
 
-        alert('Cadastro realizado com sucesso! Faça o login para continuar.');
-        onRegisterSuccess();
+    const actionCodeSettings = {
+      url: window.location.origin, // Redirect to the main page after sign-in
+      handleCodeInApp: true,
+    };
+
+    try {
+      // Store profile data temporarily, to be picked up after email verification
+      const profileData = {
+        name: formData.fullName,
+        phone: formData.phone,
+      };
+      window.localStorage.setItem(`pending_registration_${formData.email}`, JSON.stringify(profileData));
+      
+      await sendSignInLinkToEmail(auth, formData.email, actionCodeSettings);
+      window.localStorage.setItem('emailForSignIn', formData.email);
+      setLinkSent(true);
+
     } catch (error: any) {
-        if (error.code === 'auth/email-already-in-use') {
-            setError('Este e-mail já está em uso.');
-        } else {
-            setError('Ocorreu um erro ao criar a conta. Tente novamente.');
-            console.error(error);
-        }
+      setError('Ocorreu um erro ao enviar o link. Verifique seus dados e tente novamente.');
+      console.error(error);
     } finally {
-        setLoading(false);
+      setLoading(false);
     }
   };
 
@@ -106,8 +84,6 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ onRegisterSu
           email: user.email,
         });
       }
-      // onAuthStateChanged in App.tsx will handle the rest,
-      // leading to the main app screen.
     } catch (error: any) {
       setError('Falha ao se cadastrar com o Google. Tente novamente.');
       console.error('Google Sign-up error:', error);
@@ -115,7 +91,6 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ onRegisterSu
       setGoogleLoading(false);
     }
   };
-
 
   const inputClasses = "mt-1 block w-full px-3 py-3 bg-white dark:bg-gray-700 dark:text-gray-200 border border-rose-200 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-secondary focus:border-brand-secondary";
 
@@ -128,7 +103,7 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ onRegisterSu
         </div>
         <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-8 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700">
           <h2 className="text-2xl font-bold text-brand-text dark:text-rose-100 mb-2 text-center">Crie sua Conta</h2>
-          <p className="text-center text-brand-light-text dark:text-gray-400 mb-6">É rápido e fácil.</p>
+          <p className="text-center text-brand-light-text dark:text-gray-400 mb-6">É rápido e fácil, sem precisar de senha.</p>
           
           <div className="space-y-4">
             <button
@@ -146,29 +121,31 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ onRegisterSu
               <span className="flex-shrink mx-4 text-sm text-brand-light-text dark:text-gray-400">OU</span>
               <div className="flex-grow border-t border-rose-200 dark:border-gray-600"></div>
             </div>
-
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <input type="text" name="fullName" value={formData.fullName} onChange={handleInputChange} placeholder="Nome Completo" required className={inputClasses} />
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <input type="tel" name="phone" value={formData.phone} onChange={handleInputChange} placeholder="Telefone de Contato" required className={inputClasses} />
-                <input type="text" name="cpf" value={formData.cpf} onChange={handleInputChange} placeholder="CPF" required className={inputClasses} />
+            
+            {linkSent ? (
+              <div className="text-center p-4 bg-green-50 dark:bg-green-900/50 rounded-lg">
+                    <p className="font-semibold text-green-700 dark:text-green-300">Link de acesso enviado!</p>
+                    <p className="text-sm text-green-600 dark:text-green-400">Verifique sua caixa de entrada (e spam) e clique no link para completar seu cadastro e acessar sua conta.</p>
               </div>
-              <input type="email" name="email" value={formData.email} onChange={handleInputChange} placeholder="E-mail" required autoComplete="email" className={inputClasses} />
-              <input type="password" name="password" value={formData.password} onChange={handleInputChange} placeholder="Senha (mín. 6 caracteres)" required autoComplete="new-password" className={inputClasses} />
-              <input type="password" name="confirmPassword" value={formData.confirmPassword} onChange={handleInputChange} placeholder="Confirmar Senha" required autoComplete="new-password" className={inputClasses} />
-              
-              {error && <p className="text-sm text-red-600 dark:text-red-400 text-center">{error}</p>}
+            ) : (
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <input type="text" name="fullName" value={formData.fullName} onChange={handleInputChange} placeholder="Nome Completo" required className={inputClasses} />
+                  <input type="tel" name="phone" value={formData.phone} onChange={handleInputChange} placeholder="Telefone de Contato" required className={inputClasses} />
+                  <input type="email" name="email" value={formData.email} onChange={handleInputChange} placeholder="E-mail" required autoComplete="email" className={inputClasses} />
+                  
+                  {error && <p className="text-sm text-red-600 dark:text-red-400 text-center">{error}</p>}
 
-              <div>
-                <button
-                  type="submit"
-                  disabled={loading || googleLoading}
-                  className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-md text-sm font-bold text-white bg-brand-primary hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rose-500 transition-transform transform hover:scale-105 disabled:bg-rose-300 disabled:cursor-not-allowed"
-                >
-                  {loading ? 'Criando...' : 'Criar Conta com E-mail'}
-                </button>
-              </div>
-            </form>
+                  <div>
+                    <button
+                      type="submit"
+                      disabled={loading || googleLoading}
+                      className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-md text-sm font-bold text-white bg-brand-primary hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rose-500 transition-transform transform hover:scale-105 disabled:bg-rose-300 disabled:cursor-not-allowed"
+                    >
+                      {loading ? 'Enviando...' : 'Criar Conta com E-mail'}
+                    </button>
+                  </div>
+                </form>
+            )}
           </div>
 
            <div className="text-center mt-6">

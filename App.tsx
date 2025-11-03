@@ -25,8 +25,8 @@ import { LandingPage } from './components/LandingPage';
 import { ArrowRightOnRectangleIcon } from './components/icons/ArrowRightOnRectangleIcon';
 import { RegistrationPage } from './components/RegistrationPage';
 import { auth, db } from './components/firebase';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { onAuthStateChanged, signOut, isSignInWithEmailLink, signInWithEmailLink } from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 const usePersistentState = <T,>(key: string, defaultValue: T, userId?: string | null): [T, React.Dispatch<React.SetStateAction<T>>] => {
   const isTheme = key === 'theme';
@@ -137,6 +137,44 @@ const App: React.FC = () => {
   const [isDarkMode, setIsDarkMode] = useDarkMode();
 
   useEffect(() => {
+    // Handle Email Link Sign In
+    if (isSignInWithEmailLink(auth, window.location.href)) {
+        let email = window.localStorage.getItem('emailForSignIn');
+        if (!email) {
+            email = window.prompt('Por favor, forneça seu e-mail para confirmação.');
+        }
+        if(email) {
+            signInWithEmailLink(auth, email, window.location.href)
+                .then(async (result) => {
+                    window.localStorage.removeItem('emailForSignIn');
+                    const user = result.user;
+                    // Check if there's pending registration data
+                    const pendingRegKey = `pending_registration_${user.email}`;
+                    const pendingDataJSON = window.localStorage.getItem(pendingRegKey);
+                    if (pendingDataJSON) {
+                        const pendingData = JSON.parse(pendingDataJSON);
+                        const userDocRef = doc(db, "users", user.uid);
+                        // Create user doc with extra data
+                        await setDoc(userDocRef, {
+                            email: user.email,
+                            ...pendingData
+                        }, { merge: true }); // Merge to not overwrite Google Sign In data
+                        window.localStorage.removeItem(pendingRegKey);
+                    }
+                })
+                .catch((error) => {
+                    console.error("Error signing in with email link", error);
+                    alert("Ocorreu um erro. O link pode ter expirado. Tente novamente.");
+                })
+                .finally(() => {
+                    // Clean up the URL
+                    window.history.replaceState(null, '', window.location.pathname);
+                });
+        } else {
+             setAuthLoading(false);
+        }
+    }
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         try {
@@ -149,9 +187,17 @@ const App: React.FC = () => {
                 name: userDocSnap.data().name,
               });
             } else {
-               console.error("No user document found in Firestore! Forcing logout.");
-               await signOut(auth);
-               setActiveUser(null);
+               // This can happen if user signed up with Google but doc creation failed.
+               // Let's create it now.
+                await setDoc(userDocRef, {
+                  name: user.displayName,
+                  email: user.email,
+                });
+                 setActiveUser({
+                  id: user.uid,
+                  email: user.email!,
+                  name: user.displayName || 'Usuário',
+                });
             }
         } catch (error) {
             console.error("Error fetching user data:", error);
