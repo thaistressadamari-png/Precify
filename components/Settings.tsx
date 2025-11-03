@@ -51,16 +51,21 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onUpdateSettings }
       <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700">
         <h2 className="font-display text-2xl text-brand-text dark:text-rose-100 mb-4">Fórmulas Utilizadas</h2>
         <div className="space-y-4 text-sm text-brand-light-text dark:text-gray-300">
-          <div className="p-4 bg-rose-50 dark:bg-gray-700/50 rounded-lg border border-rose-100 dark:border-gray-600">
-            <p className="font-semibold text-brand-text dark:text-gray-100">Preço de Venda da Receita</p>
-            <code className="block bg-rose-100 dark:bg-gray-600 p-2 rounded-md my-1 text-brand-text dark:text-rose-100 text-xs md:text-sm">Preço = Custo de Produção * (1 + %Lucro) / (1 - %Impostos - %Custos Variáveis)</code>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">"Custo de Produção" é a soma de todos os custos diretos. Impostos e custos variáveis são calculados sobre o preço de venda final para garantir a margem de lucro desejada.</p>
-          </div>
-          <div className="p-4 bg-rose-50 dark:bg-gray-700/50 rounded-lg border border-rose-100 dark:border-gray-600">
-            <p className="font-semibold text-brand-text dark:text-gray-100">Custo Total do Recheio</p>
-            <code className="block bg-rose-100 dark:bg-gray-600 p-2 rounded-md my-1 text-brand-text dark:text-rose-100 text-xs md:text-sm">Custo de Produção (sem impostos ou taxas)</code>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Para recheios, o imposto não é aplicado diretamente, pois ele se tornará parte do custo da receita final que o utiliza.</p>
-          </div>
+            <div className="p-4 bg-rose-50 dark:bg-gray-700/50 rounded-lg border border-rose-100 dark:border-gray-600">
+                <p className="font-semibold text-brand-text dark:text-gray-100">1. Custo de Produção (CP)</p>
+                <p className="mt-1">É a soma de todos os custos diretos para fazer a receita.</p>
+                <code className="block bg-rose-100 dark:bg-gray-600 p-2 rounded-md my-1 text-brand-text dark:text-rose-100 text-xs md:text-sm">CP = Custo dos Ingredientes + Embalagens + Mão de Obra + Energia + Gás</code>
+            </div>
+            <div className="p-4 bg-rose-50 dark:bg-gray-700/50 rounded-lg border border-rose-100 dark:border-gray-600">
+                <p className="font-semibold text-brand-text dark:text-gray-100">2. Preço de Venda Final (PV)</p>
+                <p className="mt-1">A fórmula embute os custos percentuais (impostos, taxas) no preço final para garantir que seu lucro desejado seja líquido.</p>
+                <code className="block bg-rose-100 dark:bg-gray-600 p-2 rounded-md my-1 text-brand-text dark:text-rose-100 text-xs md:text-sm">PV = (CP * (1 + %Lucro)) / (1 - %Impostos - %Custos Variáveis)</code>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">O lucro é calculado sobre o Custo de Produção, e o resultado é dividido pela fração restante após descontar os custos percentuais, ajustando o preço "para cima".</p>
+            </div>
+            <div className="p-4 bg-rose-50 dark:bg-gray-700/50 rounded-lg border border-rose-100 dark:border-gray-600">
+                <p className="font-semibold text-brand-text dark:text-gray-100">Recheios e Bases</p>
+                <p className="mt-1">Para recheios, o sistema calcula apenas o <strong>Custo de Produção (CP)</strong>. Impostos e lucro são aplicados somente na receita final que utiliza esse recheio, evitando dupla taxação.</p>
+            </div>
         </div>
       </div>
 
