@@ -25,8 +25,12 @@ import { LandingPage } from './components/LandingPage';
 import { ArrowRightOnRectangleIcon } from './components/icons/ArrowRightOnRectangleIcon';
 import { RegistrationPage } from './components/RegistrationPage';
 import { auth, db } from './components/firebase';
-import { onAuthStateChanged, signOut, isSignInWithEmailLink, signInWithEmailLink } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, getDoc, setDoc, addDoc, collection, updateDoc } from 'firebase/firestore';
+import { SubscriptionPage } from './components/SubscriptionPage';
+import { FeedbackModal } from './components/FeedbackModal';
+import { AdminChoicePage } from './components/AdminChoicePage';
+import { AdminDashboard } from './components/AdminDashboard';
 
 const usePersistentState = <T,>(key: string, defaultValue: T, userId?: string | null): [T, React.Dispatch<React.SetStateAction<T>>] => {
   const isTheme = key === 'theme';
@@ -136,56 +140,55 @@ const App: React.FC = () => {
   const [packagingToEdit, setPackagingToEdit] = useState<Packaging | null>(null);
   const [isDarkMode, setIsDarkMode] = useDarkMode();
 
-  useEffect(() => {
-    // Handle Email Link Sign In
-    if (isSignInWithEmailLink(auth, window.location.href)) {
-        let email = window.localStorage.getItem('emailForSignIn');
-        if (!email) {
-            email = window.prompt('Por favor, forneça seu e-mail para confirmação.');
-        }
-        if(email) {
-            signInWithEmailLink(auth, email, window.location.href)
-                .then(async (result) => {
-                    window.localStorage.removeItem('emailForSignIn');
-                    const user = result.user;
-                    // Check if there's pending registration data
-                    const pendingRegKey = `pending_registration_${user.email}`;
-                    const pendingDataJSON = window.localStorage.getItem(pendingRegKey);
-                    if (pendingDataJSON) {
-                        const pendingData = JSON.parse(pendingDataJSON);
-                        const userDocRef = doc(db, "users", user.uid);
-                        // Create user doc with extra data
-                        await setDoc(userDocRef, {
-                            email: user.email,
-                            ...pendingData
-                        }, { merge: true }); // Merge to not overwrite Google Sign In data
-                        window.localStorage.removeItem(pendingRegKey);
-                    }
-                })
-                .catch((error) => {
-                    console.error("Error signing in with email link", error);
-                    alert("Ocorreu um erro. O link pode ter expirado. Tente novamente.");
-                })
-                .finally(() => {
-                    // Clean up the URL
-                    window.history.replaceState(null, '', window.location.pathname);
-                });
-        } else {
-             setAuthLoading(false);
-        }
-    }
+  const [showSubscriptionFlow, setShowSubscriptionFlow] = useState(false);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
 
+  const [showAdminChoice, setShowAdminChoice] = useState(false);
+  const [isAdminMode, setIsAdminMode] = useState(false);
+  
+  useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         try {
             const userDocRef = doc(db, "users", user.uid);
             const userDocSnap = await getDoc(userDocRef);
             if (userDocSnap.exists()) {
-              setActiveUser({
+              const userData = userDocSnap.data();
+
+              const fullUser: User = {
                 id: user.uid,
                 email: user.email!,
-                name: userDocSnap.data().name,
-              });
+                name: userData.name,
+                phone: userData.phone,
+                trialEndsAt: userData.trialEndsAt,
+                hasGivenFeedback: userData.hasGivenFeedback,
+                isSubscribed: userData.isSubscribed,
+              };
+              
+              if (user.email?.toLowerCase() === 'jacques.cesar123@gmail.com') {
+                  setActiveUser(fullUser);
+                  setShowAdminChoice(true);
+                  setAuthLoading(false);
+                  return; 
+              }
+
+              setActiveUser(fullUser);
+
+              // Subscription logic
+              const trialExpired = fullUser.trialEndsAt && fullUser.trialEndsAt.toDate() < new Date();
+              const isSubscribed = fullUser.isSubscribed;
+              const hasGivenFeedback = fullUser.hasGivenFeedback;
+
+              if (trialExpired && !isSubscribed) {
+                setShowSubscriptionFlow(true);
+                if (!hasGivenFeedback) {
+                    setShowFeedbackModal(true);
+                }
+              } else {
+                setShowSubscriptionFlow(false);
+                setShowFeedbackModal(false);
+              }
             } else {
                // This can happen if user signed up with Google but doc creation failed.
                // Let's create it now.
@@ -208,6 +211,10 @@ const App: React.FC = () => {
         setActiveUser(null);
         setPage('dashboard');
         setView('landing');
+        setShowSubscriptionFlow(false);
+        setShowFeedbackModal(false);
+        setShowAdminChoice(false);
+        setIsAdminMode(false);
       }
       setAuthLoading(false);
     });
@@ -381,9 +388,48 @@ const App: React.FC = () => {
   const handleCancelPackagingForm = () => { setPackagingToEdit(null); setPage('packaging'); };
   const handleDeletePackaging = (packagingId: string) => { setPackaging(prev => prev.filter(p => p.id !== packagingId)); };
 
-  // --- AUTH HANDLERS ---
+  // --- AUTH & SUBSCRIPTION HANDLERS ---
   const handleLogout = () => {
     signOut(auth).catch((error) => console.error('Logout Error:', error));
+  };
+  
+  const handleFeedbackSubmit = async (feedback: string) => {
+    if (!activeUser) return;
+    setIsSubmittingFeedback(true);
+    try {
+        await addDoc(collection(db, 'feedback'), {
+            userId: activeUser.id,
+            userName: activeUser.name,
+            feedback: feedback,
+            submittedAt: new Date(),
+        });
+
+        const userDocRef = doc(db, "users", activeUser.id);
+        await updateDoc(userDocRef, { hasGivenFeedback: true });
+
+        setActiveUser(prev => prev ? {...prev, hasGivenFeedback: true} : null);
+        setShowFeedbackModal(false);
+    } catch (error) {
+        console.error("Error submitting feedback:", error);
+        alert("Ocorreu um erro ao enviar seu feedback. Por favor, tente novamente.");
+    } finally {
+        setIsSubmittingFeedback(false);
+    }
+  };
+  
+  const handleConfirmSubscription = async () => {
+    if (!activeUser) return;
+    try {
+        const userDocRef = doc(db, "users", activeUser.id);
+        await updateDoc(userDocRef, { isSubscribed: true });
+        
+        setActiveUser(prev => prev ? {...prev, isSubscribed: true} : null);
+        setShowSubscriptionFlow(false);
+        setShowFeedbackModal(false);
+    } catch (error) {
+        console.error("Error confirming subscription:", error);
+        alert("Ocorreu um erro ao confirmar sua assinatura. Por favor, tente novamente.");
+    }
   };
 
 
@@ -515,6 +561,38 @@ const App: React.FC = () => {
       onNavigateToLanding={() => setView('landing')}
       onNavigateToRegister={() => setView('register')}
     />;
+  }
+  
+  if (showAdminChoice) {
+    return <AdminChoicePage 
+      onGoToApp={() => setShowAdminChoice(false)} 
+      onGoToAdmin={() => {
+        setShowAdminChoice(false);
+        setIsAdminMode(true);
+      }}
+    />;
+  }
+
+  if (isAdminMode) {
+    return <AdminDashboard onLogout={handleLogout} currentUser={activeUser} />;
+  }
+
+  if (showSubscriptionFlow) {
+    return (
+        <>
+            <SubscriptionPage 
+                userName={activeUser.name.split(' ')[0]}
+                onConfirmPayment={handleConfirmSubscription}
+                onLogout={handleLogout}
+            />
+            {showFeedbackModal && (
+                <FeedbackModal 
+                    onSubmit={handleFeedbackSubmit}
+                    loading={isSubmittingFeedback}
+                />
+            )}
+        </>
+    );
   }
 
   return (

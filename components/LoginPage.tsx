@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ArrowLeftIcon } from './icons/ArrowLeftIcon';
-import { signInWithPopup, sendSignInLinkToEmail } from 'firebase/auth';
+import { signInWithPopup, signInWithEmailAndPassword } from 'firebase/auth';
 import { auth, googleProvider, db } from './firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { GoogleIcon } from './icons/GoogleIcon';
@@ -12,28 +12,21 @@ interface LoginPageProps {
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateToLanding, onNavigateToRegister }) => {
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-  const [linkSent, setLinkSent] = useState(false);
 
-  const actionCodeSettings = {
-    url: window.location.href, // Redirect back to the same page
-    handleCodeInApp: true,
-  };
-
-  const handleSendLoginLink = async (e: React.FormEvent) => {
+  const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
-    setLinkSent(false);
 
     try {
-        await sendSignInLinkToEmail(auth, email, actionCodeSettings);
-        window.localStorage.setItem('emailForSignIn', email);
-        setLinkSent(true);
+        await signInWithEmailAndPassword(auth, email, password);
+        // onAuthStateChanged in App.tsx will handle the rest
     } catch (error: any) {
-        setError('Ocorreu um erro ao enviar o link. Verifique o e-mail e tente novamente.');
+        setError('E-mail ou senha inválidos. Tente novamente.');
         console.error(error);
     } finally {
         setLoading(false);
@@ -64,6 +57,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateToLanding, onNav
     }
   };
 
+  const inputClasses = "block w-full px-3 py-3 bg-white dark:bg-gray-700 dark:text-gray-200 border border-rose-200 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-secondary focus:border-brand-secondary";
+  const labelClasses = "block text-sm font-medium text-brand-light-text dark:text-gray-400 mb-1";
+
+
   return (
     <div className="bg-rose-50 dark:bg-gray-900 min-h-screen flex items-center justify-center p-4 font-sans animate-fade-in">
       <div className="w-full max-w-sm mx-auto">
@@ -76,7 +73,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateToLanding, onNav
             <ArrowLeftIcon className="w-5 h-5" />
           </button>
           <h2 className="text-2xl font-bold text-brand-text dark:text-rose-100 mb-2 text-center">Acessar Conta</h2>
-          <p className="text-center text-brand-light-text dark:text-gray-400 mb-6">Entre ou crie sua conta.</p>
+          <p className="text-center text-brand-light-text dark:text-gray-400 mb-6">Entre com seus dados abaixo.</p>
           
           <div className="space-y-4">
             <button
@@ -95,46 +92,57 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateToLanding, onNav
               <div className="flex-grow border-t border-rose-200 dark:border-gray-600"></div>
             </div>
 
-            {linkSent ? (
-                <div className="text-center p-4 bg-green-50 dark:bg-green-900/50 rounded-lg">
-                    <p className="font-semibold text-green-700 dark:text-green-300">Link enviado!</p>
-                    <p className="text-sm text-green-600 dark:text-green-400">Verifique sua caixa de entrada (e spam) e clique no link para acessar sua conta.</p>
-                </div>
-            ) : (
-                <form onSubmit={handleSendLoginLink} className="space-y-4">
-                  <div>
-                    <label htmlFor="email" className="block text-sm font-medium text-brand-light-text dark:text-gray-400 sr-only">E-mail</label>
-                    <input
-                      id="email"
-                      name="email"
-                      type="email"
-                      autoComplete="email"
-                      required
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="mt-1 block w-full px-3 py-3 bg-white dark:bg-gray-700 dark:text-gray-200 border border-rose-200 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-secondary focus:border-brand-secondary"
-                      placeholder="seu@email.com"
-                    />
-                  </div>
+            <form onSubmit={handleEmailLogin} className="space-y-4">
+              <div>
+                <label htmlFor="email" className={labelClasses}>E-mail</label>
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  autoComplete="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className={inputClasses}
+                  placeholder="seu@email.com"
+                />
+              </div>
 
-                  {error && <p className="text-sm text-red-600 dark:text-red-400 text-center">{error}</p>}
+               <div>
+                <label htmlFor="password" className={labelClasses}>Senha</label>
+                <input
+                  id="password"
+                  name="password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className={inputClasses}
+                  placeholder="Sua senha"
+                />
+              </div>
 
-                  <div>
-                    <button
-                      type="submit"
-                      disabled={loading || googleLoading}
-                      className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-md text-sm font-bold text-white bg-brand-primary hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rose-500 transition-transform transform hover:scale-105 disabled:bg-rose-300 disabled:cursor-not-allowed"
-                    >
-                      {loading ? 'Enviando...' : 'Continuar com E-mail'}
-                    </button>
-                  </div>
-                </form>
-            )}
+              {error && <p className="text-sm text-red-600 dark:text-red-400 text-center">{error}</p>}
+
+              <div>
+                <button
+                  type="submit"
+                  disabled={loading || googleLoading}
+                  className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-md text-sm font-bold text-white bg-brand-primary hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rose-500 transition-transform transform hover:scale-105 disabled:bg-rose-300 disabled:cursor-not-allowed"
+                >
+                  {loading ? 'Entrando...' : 'Entrar com E-mail'}
+                </button>
+              </div>
+            </form>
           </div>
 
            <div className="text-center mt-6">
               <p className="text-sm text-brand-light-text dark:text-gray-400">
-                Ao continuar, você concorda com nossos Termos de Serviço e Política de Privacidade.
+                Não tem uma conta?{' '}
+                <button onClick={onNavigateToRegister} className="font-semibold text-brand-primary hover:text-rose-700 dark:text-brand-secondary dark:hover:text-pink-400 focus:outline-none focus:underline">
+                  Cadastre-se
+                </button>
               </p>
             </div>
         </div>

@@ -5,6 +5,10 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  phone?: string;
+  trialEndsAt?: any; // Firestore Timestamp
+  hasGivenFeedback?: boolean;
+  isSubscribed?: boolean;
 }
 
 export interface UserAuth extends User {
@@ -32,7 +36,7 @@ export interface Ingredient {
 }
 
 export interface Packaging {
-  id: string;
+  id:string;
   name: string;
   price: number;
   amount: number;
