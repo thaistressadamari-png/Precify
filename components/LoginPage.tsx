@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ArrowLeftIcon } from './icons/ArrowLeftIcon';
 import { signInWithPopup, signInWithEmailAndPassword } from 'firebase/auth';
 import { auth, googleProvider, db } from './firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, Timestamp } from 'firebase/firestore';
 import { GoogleIcon } from './icons/GoogleIcon';
 
 interface LoginPageProps {
@@ -44,9 +44,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateToLanding, onNav
       const userDocSnap = await getDoc(userDocRef);
 
       if (!userDocSnap.exists()) {
+        const trialEndDate = new Date(Date.now() + 4 * 24 * 60 * 60 * 1000); // 4-day free trial
+        const trialTimestamp = Timestamp.fromDate(trialEndDate);
         await setDoc(userDocRef, {
-          name: user.displayName,
+          name: user.displayName || 'Usuário Google',
           email: user.email,
+          trialEndsAt: trialTimestamp,
+          hasGivenFeedback: false,
+          isSubscribed: false,
         });
       }
     } catch (error: any) {

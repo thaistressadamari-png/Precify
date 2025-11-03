@@ -192,16 +192,28 @@ const App: React.FC = () => {
               }
             } else {
                // This can happen if user signed up with Google but doc creation failed.
-               // Let's create it now.
-                await setDoc(userDocRef, {
-                  name: user.displayName,
+               // Let's create it now with a trial period.
+                const trialEndDate = new Date(Date.now() + 4 * 24 * 60 * 60 * 1000); // 4-day free trial
+                const trialTimestamp = Timestamp.fromDate(trialEndDate);
+
+                const newUserDoc = {
+                  name: user.displayName || 'Usuário Google',
                   email: user.email,
-                });
-                 setActiveUser({
+                  trialEndsAt: trialTimestamp,
+                  hasGivenFeedback: false,
+                  isSubscribed: false,
+                };
+                await setDoc(userDocRef, newUserDoc);
+
+                const fullUser: User = {
                   id: user.uid,
                   email: user.email!,
-                  name: user.displayName || 'Usuário',
-                });
+                  name: newUserDoc.name,
+                  trialEndsAt: trialTimestamp,
+                  hasGivenFeedback: false,
+                  isSubscribed: false,
+                };
+                setActiveUser(fullUser);
             }
         } catch (error) {
             console.error("Error fetching user data:", error);
@@ -578,7 +590,7 @@ const App: React.FC = () => {
       return <LandingPage onNavigateToRegister={() => setView('register')} onNavigateToLogin={() => setView('login')} />;
     }
      if (view === 'register') {
-      return <RegistrationPage onRegisterSuccess={() => setView('login')} onNavigateToLogin={() => setView('login')} />;
+      return <RegistrationPage onRegisterSuccess={(user) => setActiveUser(user)} onNavigateToLogin={() => setView('login')} />;
     }
     return <LoginPage 
       onNavigateToLanding={() => setView('landing')}

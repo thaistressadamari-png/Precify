@@ -3,9 +3,10 @@ import { auth, db, googleProvider } from './firebase';
 import { createUserWithEmailAndPassword, updateProfile, signInWithPopup } from 'firebase/auth';
 import { doc, setDoc, getDoc, Timestamp } from 'firebase/firestore';
 import { GoogleIcon } from './icons/GoogleIcon';
+import type { User } from '../types';
 
 interface RegistrationPageProps {
-  onRegisterSuccess: () => void;
+  onRegisterSuccess: (user: User) => void;
   onNavigateToLogin: () => void;
 }
 
@@ -63,18 +64,29 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ onRegisterSu
         });
 
         const trialEndDate = new Date(Date.now() + 4 * 24 * 60 * 60 * 1000); // 4-day free trial
+        const trialTimestamp = Timestamp.fromDate(trialEndDate);
 
-        // Create user document in Firestore
-        await setDoc(doc(db, "users", user.uid), {
+        const userData = {
             name: formData.fullName,
             email: user.email,
             phone: formData.phone,
-            trialEndsAt: Timestamp.fromDate(trialEndDate),
+            trialEndsAt: trialTimestamp,
             hasGivenFeedback: false,
             isSubscribed: false,
-        });
+        };
+        // Create user document in Firestore
+        await setDoc(doc(db, "users", user.uid), userData);
         
-        onRegisterSuccess();
+        const fullUser: User = {
+            id: user.uid,
+            name: formData.fullName,
+            email: user.email!,
+            phone: formData.phone,
+            trialEndsAt: trialTimestamp,
+            hasGivenFeedback: false,
+            isSubscribed: false,
+        };
+        onRegisterSuccess(fullUser);
 
     } catch (error: any) {
         if (error.code === 'auth/email-already-in-use') {
@@ -97,18 +109,45 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ onRegisterSu
 
       const userDocRef = doc(db, "users", user.uid);
       const userDocSnap = await getDoc(userDocRef);
+      
+      let appUser: User;
 
-      if (!userDocSnap.exists()) {
+      if (userDocSnap.exists()) {
+        const userData = userDocSnap.data();
+         appUser = {
+            id: user.uid,
+            email: user.email!,
+            name: userData.name,
+            phone: userData.phone,
+            trialEndsAt: userData.trialEndsAt,
+            hasGivenFeedback: userData.hasGivenFeedback,
+            isSubscribed: userData.isSubscribed,
+            paymentConfirmationClicked: userData.paymentConfirmationClicked,
+        };
+      } else {
         const trialEndDate = new Date(Date.now() + 4 * 24 * 60 * 60 * 1000); // 4-day free trial
+        const trialTimestamp = Timestamp.fromDate(trialEndDate);
         
-        await setDoc(userDocRef, {
-          name: user.displayName,
+        const newUserDoc = {
+          name: user.displayName || 'Usuário Google',
           email: user.email,
-          trialEndsAt: Timestamp.fromDate(trialEndDate),
+          trialEndsAt: trialTimestamp,
           hasGivenFeedback: false,
           isSubscribed: false,
-        });
+        };
+        await setDoc(userDocRef, newUserDoc);
+
+        appUser = {
+            id: user.uid,
+            email: user.email!,
+            name: newUserDoc.name,
+            trialEndsAt: trialTimestamp,
+            hasGivenFeedback: false,
+            isSubscribed: false,
+        };
       }
+      onRegisterSuccess(appUser);
+
     } catch (error: any) {
       setError('Falha ao se cadastrar com o Google. Tente novamente.');
       console.error('Google Sign-up error:', error);
