@@ -9,6 +9,19 @@ export interface User {
   trialEndsAt?: any; // Firestore Timestamp
   hasGivenFeedback?: boolean;
   isSubscribed?: boolean;
+  paymentConfirmationClicked?: boolean;
+}
+
+export interface ActionHistory {
+  id: string;
+  timestamp: any; // Firestore Timestamp
+  actionType: 'ADMIN_STATUS_CHANGE' | 'USER_CONFIRMED_PAYMENT';
+  description: string;
+  adminId?: string;
+  adminName?: string;
+  userId: string;
+  userName: string;
+  details?: Record<string, any>;
 }
 
 export interface UserAuth extends User {

@@ -26,7 +26,7 @@ import { ArrowRightOnRectangleIcon } from './components/icons/ArrowRightOnRectan
 import { RegistrationPage } from './components/RegistrationPage';
 import { auth, db } from './components/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc, setDoc, addDoc, collection, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, addDoc, collection, updateDoc, Timestamp } from 'firebase/firestore';
 import { SubscriptionPage } from './components/SubscriptionPage';
 import { FeedbackModal } from './components/FeedbackModal';
 import { AdminChoicePage } from './components/AdminChoicePage';
@@ -164,6 +164,7 @@ const App: React.FC = () => {
                 trialEndsAt: userData.trialEndsAt,
                 hasGivenFeedback: userData.hasGivenFeedback,
                 isSubscribed: userData.isSubscribed,
+                paymentConfirmationClicked: userData.paymentConfirmationClicked,
               };
               
               if (user.email?.toLowerCase() === 'jacques.cesar123@gmail.com') {
@@ -417,18 +418,41 @@ const App: React.FC = () => {
     }
   };
   
-  const handleConfirmSubscription = async () => {
+  const handleUserPaymentConfirmation = async () => {
     if (!activeUser) return;
+
+    if (activeUser.paymentConfirmationClicked) {
+        alert("Você já confirmou o pagamento. Estamos analisando, por favor aguarde.");
+        return;
+    }
+
     try {
         const userDocRef = doc(db, "users", activeUser.id);
-        await updateDoc(userDocRef, { isSubscribed: true });
         
-        setActiveUser(prev => prev ? {...prev, isSubscribed: true} : null);
-        setShowSubscriptionFlow(false);
-        setShowFeedbackModal(false);
+        const currentTrialEnd = activeUser.trialEndsAt ? activeUser.trialEndsAt.toDate() : new Date();
+        const newTrialEnd = new Date(currentTrialEnd.getTime() + 1 * 24 * 60 * 60 * 1000); // Add 1 day
+        const newTrialTimestamp = Timestamp.fromDate(newTrialEnd);
+
+        await updateDoc(userDocRef, { 
+            paymentConfirmationClicked: true,
+            trialEndsAt: newTrialTimestamp
+        });
+
+        // Log action
+        await addDoc(collection(db, 'action_history'), {
+            timestamp: Timestamp.now(),
+            actionType: 'USER_CONFIRMED_PAYMENT',
+            description: `Usuário '${activeUser.name}' confirmou o pagamento e ganhou +1 dia de teste.`,
+            userId: activeUser.id,
+            userName: activeUser.name,
+        });
+        
+        setActiveUser(prev => prev ? {...prev, paymentConfirmationClicked: true, trialEndsAt: newTrialTimestamp} : null);
+        alert("Obrigado por confirmar! Liberamos mais 24 horas de acesso para você enquanto processamos seu pagamento.");
+
     } catch (error) {
-        console.error("Error confirming subscription:", error);
-        alert("Ocorreu um erro ao confirmar sua assinatura. Por favor, tente novamente.");
+        console.error("Error confirming payment:", error);
+        alert("Ocorreu um erro ao confirmar seu pagamento. Por favor, tente novamente ou entre em contato com o suporte.");
     }
   };
 
@@ -581,8 +605,8 @@ const App: React.FC = () => {
     return (
         <>
             <SubscriptionPage 
-                userName={activeUser.name.split(' ')[0]}
-                onConfirmPayment={handleConfirmSubscription}
+                user={activeUser}
+                onPaymentConfirmationClick={handleUserPaymentConfirmation}
                 onLogout={handleLogout}
             />
             {showFeedbackModal && (

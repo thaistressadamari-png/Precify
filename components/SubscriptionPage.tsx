@@ -4,10 +4,11 @@ import { CalculatorIcon } from './icons/CalculatorIcon';
 import { ClipboardListIcon } from './icons/ClipboardListIcon';
 import { ChartBarIcon } from './icons/ChartBarIcon';
 import { DocumentArrowDownIcon } from './icons/DocumentArrowDownIcon';
+import { User } from '../types';
 
 interface SubscriptionPageProps {
-  userName: string;
-  onConfirmPayment: () => void;
+  user: User;
+  onPaymentConfirmationClick: () => void;
   onLogout: () => void;
 }
 
@@ -23,7 +24,9 @@ const Feature: React.FC<{ icon: React.ElementType, title: string, children: Reac
     </div>
 );
 
-export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({ userName, onConfirmPayment, onLogout }) => {
+export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({ user, onPaymentConfirmationClick, onLogout }) => {
+  const userName = user.name.split(' ')[0];
+  
   return (
     <div className="bg-rose-50 dark:bg-gray-900 min-h-screen flex items-center justify-center p-4 font-sans animate-fade-in">
         <div className="absolute top-4 right-4">
@@ -74,8 +77,12 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({ userName, on
             </a>
 
             <div className="mt-6">
-                <button onClick={onConfirmPayment} className="text-sm text-brand-light-text dark:text-gray-400 hover:text-brand-primary dark:hover:text-rose-300 underline">
-                    Já paguei, liberar meu acesso
+                <button 
+                  onClick={onPaymentConfirmationClick} 
+                  className="text-sm text-brand-light-text dark:text-gray-400 hover:text-brand-primary dark:hover:text-rose-300 underline disabled:text-gray-500 disabled:no-underline disabled:cursor-not-allowed"
+                  disabled={user.paymentConfirmationClicked}
+                >
+                  {user.paymentConfirmationClicked ? 'Confirmação recebida, aguarde.' : 'Já paguei, liberar meu acesso'}
                 </button>
             </div>
 
