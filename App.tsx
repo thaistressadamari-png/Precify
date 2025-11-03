@@ -406,6 +406,18 @@ const App: React.FC = () => {
     signOut(auth).catch((error) => console.error('Logout Error:', error));
   };
   
+  const handleUserUpdate = async (updatedData: Partial<User>) => {
+    if (!activeUser) return;
+    try {
+        const userDocRef = doc(db, "users", activeUser.id);
+        await updateDoc(userDocRef, updatedData);
+        setActiveUser(prevUser => prevUser ? { ...prevUser, ...updatedData } : null);
+    } catch (error) {
+        console.error("Error updating user data in Firestore:", error);
+        throw error; // Re-throw to be caught by the caller
+    }
+  };
+
   const handleFeedbackSubmit = async (feedback: string) => {
     if (!activeUser) return;
     setIsSubmittingFeedback(true);
@@ -507,7 +519,12 @@ const App: React.FC = () => {
             ingredients={ingredients} packagingItems={packaging} settings={settings} onImport={setFillings}
         />;
       case 'settings':
-        return <Settings settings={settings} onUpdateSettings={setSettings} />;
+        return <Settings 
+          settings={settings} 
+          onUpdateSettings={setSettings} 
+          user={activeUser!} 
+          onUserUpdate={handleUserUpdate} 
+        />;
       case 'recipe-pricer':
         return <RecipePricer 
             ingredients={ingredientsWithFillings} packagingItems={packaging} settings={settings} type="recipe"

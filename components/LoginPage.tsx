@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ArrowLeftIcon } from './icons/ArrowLeftIcon';
-import { signInWithPopup, signInWithEmailAndPassword } from 'firebase/auth';
+import { signInWithPopup, signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 import { auth, googleProvider, db } from './firebase';
 import { doc, getDoc, setDoc, Timestamp } from 'firebase/firestore';
 import { GoogleIcon } from './icons/GoogleIcon';
@@ -62,6 +62,25 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateToLanding, onNav
     }
   };
 
+  const handlePasswordReset = async () => {
+    if (!email) {
+      setError('Por favor, digite seu e-mail para redefinir a senha.');
+      return;
+    }
+    setError('');
+    setLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, email);
+      alert('Se o seu e-mail estiver cadastrado, você receberá um link para redefinir sua senha. Verifique sua caixa de entrada e spam.');
+    } catch (error: any) {
+      console.error('Password reset error:', error);
+      setError('Ocorreu um erro ao tentar redefinir a senha. Verifique o e-mail digitado.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
   const inputClasses = "block w-full px-3 py-3 bg-white dark:bg-gray-700 dark:text-gray-200 border border-rose-200 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-secondary focus:border-brand-secondary";
   const labelClasses = "block text-sm font-medium text-brand-light-text dark:text-gray-400 mb-1";
 
@@ -114,7 +133,17 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateToLanding, onNav
               </div>
 
                <div>
-                <label htmlFor="password" className={labelClasses}>Senha</label>
+                <div className="flex justify-between items-center">
+                    <label htmlFor="password" className={labelClasses}>Senha</label>
+                    <button
+                        type="button"
+                        onClick={handlePasswordReset}
+                        disabled={loading || googleLoading}
+                        className="text-xs font-semibold text-brand-primary hover:text-rose-700 dark:text-brand-secondary dark:hover:text-pink-400 focus:outline-none focus:underline disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        Esqueceu a senha?
+                    </button>
+                </div>
                 <input
                   id="password"
                   name="password"
@@ -123,7 +152,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateToLanding, onNav
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className={inputClasses}
+                  className={inputClasses + " mt-0"}
                   placeholder="Sua senha"
                 />
               </div>
