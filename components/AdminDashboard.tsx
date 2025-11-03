@@ -1,10 +1,59 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from './firebase';
-import { collection, getDocs, doc, updateDoc, Timestamp, addDoc, query, orderBy, limit } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, Timestamp, addDoc, query, orderBy, limit, where } from 'firebase/firestore';
 import type { User, ActionHistory } from '../types';
 import { ArrowRightOnRectangleIcon } from './icons/ArrowRightOnRectangleIcon';
 import { SearchIcon } from './icons/SearchIcon';
 import { AdjustmentsHorizontalIcon } from './icons/AdjustmentsHorizontalIcon';
+
+const UserActionHistoryLog: React.FC<{ userId: string }> = ({ userId }) => {
+    const [actions, setActions] = useState<ActionHistory[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
+
+    useEffect(() => {
+        const fetchActions = async () => {
+            if (!userId) return;
+            setLoading(true);
+            setError('');
+            try {
+                const actionsQuery = query(
+                    collection(db, "action_history"),
+                    where("userId", "==", userId),
+                    orderBy("timestamp", "desc"),
+                    limit(50)
+                );
+                const querySnapshot = await getDocs(actionsQuery);
+                const actionsList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ActionHistory));
+                setActions(actionsList);
+            } catch (err) {
+                console.error("Error fetching user action history:", err);
+                setError('Falha ao carregar o histórico do usuário.');
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchActions();
+    }, [userId]);
+
+    if (loading) return <p className="text-center py-4 text-sm text-gray-500">Carregando histórico...</p>;
+    if (error) return <p className="text-center py-4 text-sm text-red-500">{error}</p>;
+    if (actions.length === 0) return <p className="text-center py-4 text-sm text-gray-500">Nenhuma ação registrada para este usuário.</p>;
+
+    return (
+        <div className="max-h-64 overflow-y-auto pr-2 space-y-3 rounded-lg bg-rose-50/50 dark:bg-gray-900/50 p-3 border border-rose-200 dark:border-gray-700">
+            {actions.map(action => (
+                <div key={action.id} className="p-3 bg-white dark:bg-gray-700/50 rounded-md shadow-sm">
+                    <p className="text-brand-text dark:text-gray-200 text-sm">{action.description}</p>
+                    <p className="text-xs text-brand-light-text dark:text-gray-400 mt-1">
+                        {action.timestamp.toDate().toLocaleString('pt-BR')}
+                    </p>
+                </div>
+            ))}
+        </div>
+    );
+};
+
 
 const UserEditModal: React.FC<{
     user: User;
@@ -22,7 +71,12 @@ const UserEditModal: React.FC<{
     const handleSave = () => {
         let trialTimestamp;
         try {
-            const dateWithTime = new Date(`${trialDate}T12:00:00.000Z`);
+            if (!trialDate) {
+                 throw new Error("Data inválida.");
+            }
+            const dateWithTime = new Date(trialDate);
+            // Adjust for timezone offset to prevent date from shifting
+            dateWithTime.setMinutes(dateWithTime.getMinutes() + dateWithTime.getTimezoneOffset());
             trialTimestamp = Timestamp.fromDate(dateWithTime);
         } catch (e) {
             alert('Data inválida.');
@@ -33,82 +87,48 @@ const UserEditModal: React.FC<{
 
     return (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-lg p-6">
-                <h2 className="font-display text-2xl text-brand-text dark:text-rose-100 mb-4">Gerenciar Usuário</h2>
-                <div className="space-y-4 text-sm">
-                    <p><strong className="text-brand-light-text dark:text-gray-400">Nome:</strong> {user.name}</p>
-                    <p><strong className="text-brand-light-text dark:text-gray-400">Email:</strong> {user.email}</p>
-                    <p><strong className="text-brand-light-text dark:text-gray-400">Telefone:</strong> {user.phone || 'Não informado'}</p>
-                </div>
-                <div className="mt-6 space-y-4">
-                    <div>
-                        <label className="flex items-center gap-2 text-brand-text dark:text-gray-200">
-                            <input type="checkbox" checked={isSubscribed} onChange={(e) => setIsSubscribed(e.target.checked)} className="h-5 w-5 rounded text-brand-primary focus:ring-brand-secondary"/>
-                            <span>Assinatura Ativa</span>
-                        </label>
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-2xl">
+                <div className="p-6 max-h-[90vh] overflow-y-auto">
+                    <h2 className="font-display text-2xl text-brand-text dark:text-rose-100 mb-4">Gerenciar Usuário</h2>
+                    <div className="space-y-4 text-sm mb-6">
+                        <p><strong className="text-brand-light-text dark:text-gray-400 font-medium">Nome:</strong> <span className="text-brand-text dark:text-gray-200">{user.name}</span></p>
+                        <p><strong className="text-brand-light-text dark:text-gray-400 font-medium">Email:</strong> <span className="text-brand-text dark:text-gray-200">{user.email}</span></p>
+                        <p><strong className="text-brand-light-text dark:text-gray-400 font-medium">Telefone:</strong> <span className="text-brand-text dark:text-gray-200">{user.phone || 'Não informado'}</span></p>
                     </div>
-                    <div>
-                        <label htmlFor="trialDate" className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Data de Fim do Teste</label>
-                        <input
-                            type="date"
-                            id="trialDate"
-                            value={trialDate}
-                            onChange={(e) => setTrialDate(e.target.value)}
-                            className="mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 dark:text-gray-200 border border-rose-200 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-secondary focus:border-brand-secondary"
-                        />
+                    <div className="space-y-4 p-4 bg-rose-50 dark:bg-gray-800/50 rounded-lg border border-rose-100 dark:border-gray-700">
+                        <div>
+                            <label className="flex items-center gap-3 cursor-pointer">
+                                <input type="checkbox" checked={isSubscribed} onChange={(e) => setIsSubscribed(e.target.checked)} className="h-5 w-5 rounded text-brand-primary focus:ring-brand-secondary border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:focus:ring-offset-gray-800"/>
+                                <span className="font-medium text-brand-text dark:text-gray-200">Assinatura Ativa</span>
+                            </label>
+                        </div>
+                        <div>
+                            <label htmlFor="trialDate" className="block text-sm font-medium text-brand-light-text dark:text-gray-400 mb-1">Data de Fim do Teste</label>
+                            <input
+                                type="date"
+                                id="trialDate"
+                                value={trialDate}
+                                onChange={(e) => setTrialDate(e.target.value)}
+                                className="block w-full px-3 py-2 bg-white dark:bg-gray-700 dark:text-gray-200 border border-rose-200 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-secondary focus:border-brand-secondary"
+                            />
+                        </div>
                     </div>
-                </div>
-                <div className="flex justify-end gap-4 mt-8">
-                    <button onClick={onClose} className="bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-bold py-2 px-4 rounded-lg">
-                        Cancelar
-                    </button>
-                    <button onClick={handleSave} className="bg-brand-primary hover:bg-rose-700 text-white font-bold py-2 px-4 rounded-lg">
-                        Salvar Alterações
-                    </button>
+
+                    <div className="mt-8 pt-6 border-t border-rose-200 dark:border-gray-700">
+                        <h3 className="font-display text-xl text-brand-text dark:text-rose-100 mb-4">Histórico de Ações do Usuário</h3>
+                        <UserActionHistoryLog userId={user.id} />
+                    </div>
+
+                    <div className="flex justify-end gap-4 mt-8">
+                        <button onClick={onClose} className="bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-bold py-2 px-4 rounded-lg">
+                            Cancelar
+                        </button>
+                        <button onClick={handleSave} className="bg-brand-primary hover:bg-rose-700 text-white font-bold py-2 px-4 rounded-lg">
+                            Salvar Alterações
+                        </button>
+                    </div>
                 </div>
             </div>
-        </div>
-    );
-};
-
-const ActionHistoryLog: React.FC = () => {
-    const [actions, setActions] = useState<ActionHistory[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState('');
-
-    useEffect(() => {
-        const fetchActions = async () => {
-            setLoading(true);
-            try {
-                const actionsQuery = query(collection(db, "action_history"), orderBy("timestamp", "desc"), limit(100));
-                const querySnapshot = await getDocs(actionsQuery);
-                const actionsList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ActionHistory));
-                setActions(actionsList);
-            } catch (err) {
-                console.error(err);
-                setError('Falha ao carregar o histórico de ações.');
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchActions();
-    }, []);
-
-    if (loading) return <p className="text-center py-8">Carregando histórico...</p>;
-    if (error) return <p className="text-center py-8 text-red-500">{error}</p>;
-
-    return (
-        <div className="max-h-[65vh] overflow-y-auto">
-            <ul className="space-y-3">
-                {actions.map(action => (
-                    <li key={action.id} className="p-3 bg-rose-50 dark:bg-gray-700/50 rounded-lg border border-rose-200 dark:border-gray-600">
-                        <p className="text-brand-text dark:text-gray-200 text-sm">{action.description}</p>
-                        <p className="text-xs text-brand-light-text dark:text-gray-400 mt-1">
-                            {action.timestamp.toDate().toLocaleString('pt-BR')}
-                        </p>
-                    </li>
-                ))}
-            </ul>
         </div>
     );
 };
@@ -120,7 +140,6 @@ export const AdminDashboard: React.FC<{ onLogout: () => void; currentUser: User;
     const [error, setError] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [editingUser, setEditingUser] = useState<User | null>(null);
-    const [activeTab, setActiveTab] = useState<'users' | 'history'>('users');
 
     useEffect(() => {
         const fetchUsers = async () => {
@@ -144,7 +163,6 @@ export const AdminDashboard: React.FC<{ onLogout: () => void; currentUser: User;
             const userRef = doc(db, 'users', userId);
             await updateDoc(userRef, data);
             
-            // Log action
             const changes = [];
             if (originalUser.isSubscribed !== data.isSubscribed) {
                 changes.push(`status de assinatura para '${data.isSubscribed ? 'Ativo' : 'Inativo'}'`);
@@ -154,6 +172,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void; currentUser: User;
             if (originalDate !== newDate) {
                 changes.push(`data final do teste para '${newDate}'`);
             }
+
             if(changes.length > 0) {
                  await addDoc(collection(db, 'action_history'), {
                     timestamp: Timestamp.now(),
@@ -163,6 +182,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void; currentUser: User;
                     adminName: currentUser.name,
                     userId: originalUser.id,
                     userName: originalUser.name,
+                    details: { from: { isSubscribed: originalUser.isSubscribed, trialEndsAt: originalDate }, to: { isSubscribed: data.isSubscribed, trialEndsAt: newDate } },
                 });
             }
 
@@ -194,19 +214,6 @@ export const AdminDashboard: React.FC<{ onLogout: () => void; currentUser: User;
             user.email.toLowerCase().includes(searchTerm.toLowerCase())
         );
     }, [users, searchTerm]);
-    
-    const TabButton: React.FC<{tabId: 'users' | 'history'; children: React.ReactNode;}> = ({ tabId, children }) => (
-        <button
-            onClick={() => setActiveTab(tabId)}
-            className={`px-4 py-2 text-sm font-semibold rounded-t-lg border-b-2 transition-colors ${
-                activeTab === tabId
-                ? 'text-brand-primary border-brand-primary'
-                : 'text-brand-light-text dark:text-gray-400 border-transparent hover:text-brand-text dark:hover:text-gray-200'
-            }`}
-        >
-            {children}
-        </button>
-    );
 
     return (
         <div className="bg-rose-50 dark:bg-gray-900 min-h-screen text-brand-text dark:text-gray-200 font-sans">
@@ -223,80 +230,63 @@ export const AdminDashboard: React.FC<{ onLogout: () => void; currentUser: User;
                 </header>
 
                 <main>
-                    <div className="border-b border-rose-200 dark:border-gray-700 mb-6">
-                        <nav className="flex space-x-2">
-                            <TabButton tabId="users">Usuários</TabButton>
-                            <TabButton tabId="history">Histórico de Ações</TabButton>
-                        </nav>
-                    </div>
-                
                     <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700">
-                        {activeTab === 'users' && (
-                          <>
-                            <div className="flex justify-between items-center mb-4 flex-wrap gap-4">
-                                <h2 className="font-display text-2xl text-brand-text dark:text-rose-100">Usuários ({filteredUsers.length})</h2>
-                                <div className="relative">
-                                    <input 
-                                        type="search"
-                                        placeholder="Buscar por nome ou email..."
-                                        value={searchTerm}
-                                        onChange={(e) => setSearchTerm(e.target.value)}
-                                        className="pl-10 pr-4 py-2 w-full sm:w-64 border border-rose-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-brand-secondary focus:border-brand-secondary"
-                                    />
-                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                        <SearchIcon className="w-5 h-5 text-gray-400" />
-                                    </div>
+                        <div className="flex justify-between items-center mb-4 flex-wrap gap-4">
+                            <h2 className="font-display text-2xl text-brand-text dark:text-rose-100">Usuários ({filteredUsers.length})</h2>
+                            <div className="relative">
+                                <input 
+                                    type="search"
+                                    placeholder="Buscar por nome ou email..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    className="pl-10 pr-4 py-2 w-full sm:w-64 border border-rose-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-gray-200 focus:ring-brand-secondary focus:border-brand-secondary"
+                                />
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <SearchIcon className="w-5 h-5 text-gray-400" />
                                 </div>
                             </div>
-                            {loading && <p className="text-center py-8">Carregando usuários...</p>}
-                            {error && <p className="text-center py-8 text-red-500">{error}</p>}
+                        </div>
+                        {loading && <p className="text-center py-8">Carregando usuários...</p>}
+                        {error && <p className="text-center py-8 text-red-500">{error}</p>}
 
-                            {!loading && !error && (
-                                <div className="max-h-[65vh] overflow-y-auto">
-                                    <table className="w-full text-left">
-                                        <thead className="sticky top-0 bg-rose-50 dark:bg-gray-700/80 backdrop-blur-sm">
-                                            <tr>
-                                                <th className="p-3 text-sm font-semibold text-brand-light-text dark:text-gray-400">Nome</th>
-                                                <th className="p-3 text-sm font-semibold text-brand-light-text dark:text-gray-400 hidden md:table-cell">Email</th>
-                                                <th className="p-3 text-sm font-semibold text-brand-light-text dark:text-gray-400 hidden lg:table-cell">Fim do Teste</th>
-                                                <th className="p-3 text-sm font-semibold text-brand-light-text dark:text-gray-400">Status</th>
-                                                <th className="p-3 text-sm font-semibold text-brand-light-text dark:text-gray-400 text-right">Ações</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-rose-100 dark:divide-gray-700">
-                                            {filteredUsers.map(user => {
-                                                const status = getUserStatus(user);
-                                                return (
-                                                    <tr key={user.id} className="hover:bg-rose-50 dark:hover:bg-gray-700/50">
-                                                        <td className="p-3 font-medium text-brand-text dark:text-gray-200">{user.name}</td>
-                                                        <td className="p-3 text-brand-light-text dark:text-gray-400 hidden md:table-cell">{user.email}</td>
-                                                        <td className="p-3 text-brand-light-text dark:text-gray-400 hidden lg:table-cell">
-                                                            {user.trialEndsAt ? user.trialEndsAt.toDate().toLocaleDateString('pt-BR') : 'N/A'}
-                                                        </td>
-                                                        <td className="p-3">
-                                                            <span className={`px-2 py-1 text-xs font-bold rounded-full ${status.color}`}>
-                                                                {status.text}
-                                                            </span>
-                                                        </td>
-                                                        <td className="p-3 text-right">
-                                                            <button onClick={() => setEditingUser(user)} className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 p-1 rounded-full hover:bg-blue-100 dark:hover:bg-gray-600">
-                                                                <AdjustmentsHorizontalIcon className="w-5 h-5"/>
-                                                            </button>
-                                                        </td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            )}
-                          </>
-                        )}
-                        {activeTab === 'history' && (
-                           <>
-                             <h2 className="font-display text-2xl text-brand-text dark:text-rose-100 mb-4">Últimas 100 Ações</h2>
-                             <ActionHistoryLog />
-                           </>
+                        {!loading && !error && (
+                            <div className="max-h-[65vh] overflow-y-auto">
+                                <table className="w-full text-left">
+                                    <thead className="sticky top-0 bg-rose-50 dark:bg-gray-700/80 backdrop-blur-sm">
+                                        <tr>
+                                            <th className="p-3 text-sm font-semibold text-brand-light-text dark:text-gray-400">Nome</th>
+                                            <th className="p-3 text-sm font-semibold text-brand-light-text dark:text-gray-400 hidden md:table-cell">Email</th>
+                                            <th className="p-3 text-sm font-semibold text-brand-light-text dark:text-gray-400 hidden lg:table-cell">Fim do Teste</th>
+                                            <th className="p-3 text-sm font-semibold text-brand-light-text dark:text-gray-400">Status</th>
+                                            <th className="p-3 text-sm font-semibold text-brand-light-text dark:text-gray-400 text-right">Ações</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-rose-100 dark:divide-gray-700">
+                                        {filteredUsers.map(user => {
+                                            const status = getUserStatus(user);
+                                            return (
+                                                <tr key={user.id} className="hover:bg-rose-50 dark:hover:bg-gray-700/50">
+                                                    <td className="p-3 font-medium text-brand-text dark:text-gray-200">{user.name}</td>
+                                                    <td className="p-3 text-brand-light-text dark:text-gray-400 hidden md:table-cell">{user.email}</td>
+                                                    <td className="p-3 text-brand-light-text dark:text-gray-400 hidden lg:table-cell">
+                                                        {user.trialEndsAt ? user.trialEndsAt.toDate().toLocaleDateString('pt-BR') : 'N/A'}
+                                                    </td>
+                                                    <td className="p-3">
+                                                        <span className={`px-2 py-1 text-xs font-bold rounded-full ${status.color}`}>
+                                                            {status.text}
+                                                        </span>
+                                                    </td>
+                                                    <td className="p-3 text-right">
+                                                        <button onClick={() => setEditingUser(user)} className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 p-1 rounded-full hover:bg-blue-100 dark:hover:bg-gray-600">
+                                                            <AdjustmentsHorizontalIcon className="w-5 h-5"/>
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
                         )}
                     </div>
                 </main>

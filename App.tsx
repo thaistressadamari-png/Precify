@@ -422,7 +422,6 @@ const App: React.FC = () => {
     if (!activeUser) return;
 
     if (activeUser.paymentConfirmationClicked) {
-        alert("Você já confirmou o pagamento. Estamos analisando, por favor aguarde.");
         return;
     }
 
@@ -448,7 +447,6 @@ const App: React.FC = () => {
         });
         
         setActiveUser(prev => prev ? {...prev, paymentConfirmationClicked: true, trialEndsAt: newTrialTimestamp} : null);
-        alert("Obrigado por confirmar! Liberamos mais 24 horas de acesso para você enquanto processamos seu pagamento.");
 
     } catch (error) {
         console.error("Error confirming payment:", error);
