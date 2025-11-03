@@ -20,11 +20,11 @@ const UserActionHistoryLog: React.FC<{ userId: string }> = ({ userId }) => {
                 const actionsQuery = query(
                     collection(db, "action_history"),
                     where("userId", "==", userId),
-                    orderBy("timestamp", "desc"),
                     limit(50)
                 );
                 const querySnapshot = await getDocs(actionsQuery);
                 const actionsList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ActionHistory));
+                actionsList.sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis());
                 setActions(actionsList);
             } catch (err) {
                 console.error("Error fetching user action history:", err);
@@ -140,6 +140,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void; currentUser: User;
     const [error, setError] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [editingUser, setEditingUser] = useState<User | null>(null);
+    const [filter, setFilter] = useState<'all' | 'trial' | 'subscribed' | 'expired'>('all');
 
     useEffect(() => {
         const fetchUsers = async () => {
@@ -209,11 +210,29 @@ export const AdminDashboard: React.FC<{ onLogout: () => void; currentUser: User;
     };
 
     const filteredUsers = useMemo(() => {
-        return users.filter(user =>
-            user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            user.email.toLowerCase().includes(searchTerm.toLowerCase())
-        );
-    }, [users, searchTerm]);
+        const now = new Date();
+        return users
+            .filter(user => {
+                const trialEnds = user.trialEndsAt?.toDate();
+                const hasTrialEnded = trialEnds && trialEnds <= now;
+
+                switch (filter) {
+                    case 'subscribed':
+                        return user.isSubscribed;
+                    case 'trial':
+                        return !user.isSubscribed && trialEnds && !hasTrialEnded;
+                    case 'expired':
+                        return !user.isSubscribed && hasTrialEnded;
+                    case 'all':
+                    default:
+                        return true;
+                }
+            })
+            .filter(user =>
+                user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                user.email.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+    }, [users, searchTerm, filter]);
 
     return (
         <div className="bg-rose-50 dark:bg-gray-900 min-h-screen text-brand-text dark:text-gray-200 font-sans">
@@ -232,7 +251,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void; currentUser: User;
                 <main>
                     <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700">
                         <div className="flex justify-between items-center mb-4 flex-wrap gap-4">
-                            <h2 className="font-display text-2xl text-brand-text dark:text-rose-100">Usuários ({filteredUsers.length})</h2>
+                            <h2 className="font-display text-2xl text-brand-text dark:text-rose-100">Usuários ({users.length})</h2>
                             <div className="relative">
                                 <input 
                                     type="search"
@@ -246,6 +265,28 @@ export const AdminDashboard: React.FC<{ onLogout: () => void; currentUser: User;
                                 </div>
                             </div>
                         </div>
+                        
+                        <div className="flex justify-start flex-wrap gap-2 mb-4 border-b border-rose-100 dark:border-gray-700 pb-4">
+                            {([
+                                { key: 'all', label: 'Todos' },
+                                { key: 'trial', label: 'Em Teste' },
+                                { key: 'subscribed', label: 'Pagos' },
+                                { key: 'expired', label: 'Expirados' },
+                            ] as const).map(f => (
+                                <button
+                                    key={f.key}
+                                    onClick={() => setFilter(f.key)}
+                                    className={`px-3 py-1 text-sm font-medium rounded-full transition-colors ${
+                                        filter === f.key
+                                        ? 'bg-brand-primary text-white shadow-sm'
+                                        : 'bg-rose-100 hover:bg-rose-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-brand-light-text dark:text-gray-300'
+                                    }`}
+                                >
+                                    {f.label}
+                                </button>
+                            ))}
+                        </div>
+
                         {loading && <p className="text-center py-8">Carregando usuários...</p>}
                         {error && <p className="text-center py-8 text-red-500">{error}</p>}
 

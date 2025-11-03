@@ -419,18 +419,21 @@ const App: React.FC = () => {
   };
   
   const handleUserPaymentConfirmation = async () => {
-    if (!activeUser) return;
-
-    if (activeUser.paymentConfirmationClicked) {
+    if (!activeUser || activeUser.paymentConfirmationClicked) {
         return;
     }
 
+    // Optimistic UI update to grant immediate access
+    const currentTrialEnd = activeUser.trialEndsAt ? activeUser.trialEndsAt.toDate() : new Date();
+    const newTrialEnd = new Date(currentTrialEnd.getTime() + 1 * 24 * 60 * 60 * 1000); // Add 1 day
+    const newTrialTimestamp = Timestamp.fromDate(newTrialEnd);
+
+    setActiveUser(prev => prev ? {...prev, paymentConfirmationClicked: true, trialEndsAt: newTrialTimestamp} : null);
+    setShowSubscriptionFlow(false);
+
+    // Perform background update
     try {
         const userDocRef = doc(db, "users", activeUser.id);
-        
-        const currentTrialEnd = activeUser.trialEndsAt ? activeUser.trialEndsAt.toDate() : new Date();
-        const newTrialEnd = new Date(currentTrialEnd.getTime() + 1 * 24 * 60 * 60 * 1000); // Add 1 day
-        const newTrialTimestamp = Timestamp.fromDate(newTrialEnd);
 
         await updateDoc(userDocRef, { 
             paymentConfirmationClicked: true,
@@ -445,12 +448,10 @@ const App: React.FC = () => {
             userId: activeUser.id,
             userName: activeUser.name,
         });
-        
-        setActiveUser(prev => prev ? {...prev, paymentConfirmationClicked: true, trialEndsAt: newTrialTimestamp} : null);
-
     } catch (error) {
         console.error("Error confirming payment:", error);
-        alert("Ocorreu um erro ao confirmar seu pagamento. Por favor, tente novamente ou entre em contato com o suporte.");
+        // User already has access from optimistic update. We can optionally revert or notify.
+        // For now, logging the error is sufficient.
     }
   };
 
