@@ -223,35 +223,82 @@ const App: React.FC = () => {
 
     fetchData();
   }, [userId]);
+  
+  const saveData = useCallback(async (dataToSave: {
+    ingredients: Ingredient[],
+    packaging: Packaging[],
+    recipes: Recipe[],
+    fillings: Recipe[],
+    settings: AppSettings,
+  }) => {
+    if (!userId) return;
+    const userDocRef = doc(db, "appData", userId);
+    try {
+        await setDoc(userDocRef, dataToSave);
+    } catch (error) {
+        console.error("Failed to save user data:", error);
+        alert("Ocorreu um erro ao salvar seus dados. Verifique sua conexão e tente novamente.");
+    }
+  }, [userId]);
 
-  // Effect for Saving data to Firestore (debounced)
+
+  // Effect for Saving data to Firestore (debounced for regular changes)
   useEffect(() => {
     const handler = setTimeout(() => {
         if (userId && initialLoadComplete.current) {
-            const saveData = async () => {
-                const userDocRef = doc(db, "appData", userId);
-                const dataToSave = {
-                    ingredients,
-                    packaging,
-                    recipes,
-                    fillings,
-                    settings,
-                };
-                try {
-                    await setDoc(userDocRef, dataToSave);
-                } catch (error) {
-                    console.error("Failed to save user data:", error);
-                    alert("Ocorreu um erro ao salvar seus dados. Verifique sua conexão e tente novamente.");
-                }
-            };
-            saveData();
+            saveData({ ingredients, packaging, recipes, fillings, settings });
         }
     }, 1500); // Debounce saves by 1.5 seconds
 
     return () => {
         clearTimeout(handler);
     };
-  }, [ingredients, packaging, recipes, fillings, settings, userId]);
+  }, [ingredients, packaging, recipes, fillings, settings, userId, saveData]);
+  
+  // Handlers for immediate save after import
+  const handleImportIngredients = useCallback((newIngredients: Ingredient[]) => {
+    setIngredients(newIngredients);
+    saveData({
+        ingredients: newIngredients,
+        packaging,
+        recipes,
+        fillings,
+        settings,
+    });
+  }, [packaging, recipes, fillings, settings, saveData]);
+
+  const handleImportPackaging = useCallback((newPackaging: Packaging[]) => {
+      setPackaging(newPackaging);
+      saveData({
+          ingredients,
+          packaging: newPackaging,
+          recipes,
+          fillings,
+          settings,
+      });
+  }, [ingredients, recipes, fillings, settings, saveData]);
+
+  const handleImportRecipes = useCallback((newRecipes: Recipe[]) => {
+      setRecipes(newRecipes);
+      saveData({
+          ingredients,
+          packaging,
+          recipes: newRecipes,
+          fillings,
+          settings,
+      });
+  }, [ingredients, packaging, fillings, settings, saveData]);
+
+  const handleImportFillings = useCallback((newFillings: Recipe[]) => {
+      setFillings(newFillings);
+      saveData({
+          ingredients,
+          packaging,
+          recipes,
+          fillings: newFillings,
+          settings,
+      });
+  }, [ingredients, packaging, recipes, settings, saveData]);
 
 
   const ingredientsWithFillings = useMemo(() => {
@@ -472,26 +519,26 @@ const App: React.FC = () => {
         return <IngredientManager 
           ingredients={ingredients} 
           onAddNew={handleAddNewIngredient} onEdit={handleEditIngredient} onDelete={handleDeleteIngredient}
-          onViewDetails={handleViewIngredientDetails} onImport={setIngredients} highlightedId={highlightedIngredientId}
+          onViewDetails={handleViewIngredientDetails} onImport={handleImportIngredients} highlightedId={highlightedIngredientId}
           onHighlightComplete={() => setHighlightedIngredientId(null)}
         />;
       case 'packaging':
         return <PackagingManager
           packaging={packaging}
           onAddNew={handleAddNewPackaging} onEdit={handleEditPackaging} onDelete={handleDeletePackaging}
-          onImport={setPackaging}
+          onImport={handleImportPackaging}
         />;
       case 'recipes':
         return <Recipes 
             recipes={recipes} type="recipe" onAddNew={handleAddNewRecipe} onEdit={handleEditRecipe} 
             onDelete={handleDeleteRecipe} onViewDetails={handleViewRecipeDetails}
-            ingredients={ingredientsWithFillings} packagingItems={packaging} settings={settings} onImport={setRecipes}
+            ingredients={ingredientsWithFillings} packagingItems={packaging} settings={settings} onImport={handleImportRecipes}
         />;
       case 'fillings':
         return <Recipes 
             recipes={fillings} type="filling" onAddNew={handleAddNewFilling} onEdit={handleEditFilling} 
             onDelete={handleDeleteFilling} onViewDetails={handleViewFillingDetails}
-            ingredients={ingredients} packagingItems={packaging} settings={settings} onImport={setFillings}
+            ingredients={ingredients} packagingItems={packaging} settings={settings} onImport={handleImportFillings}
         />;
       case 'settings':
         return <Settings 
