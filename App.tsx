@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import type { Ingredient, Packaging, Recipe, AppSettings, Page, Unit, User } from './types';
 import { IngredientManager } from './components/IngredientManager';
 import { PackagingManager } from './components/PackagingManager';
@@ -32,77 +33,19 @@ import { FeedbackModal } from './components/FeedbackModal';
 import { AdminChoicePage } from './components/AdminChoicePage';
 import { AdminDashboard } from './components/AdminDashboard';
 
-const usePersistentState = <T,>(key: string, defaultValue: T, userId?: string | null): [T, React.Dispatch<React.SetStateAction<T>>] => {
-  const isTheme = key === 'theme';
-  const getStorageKey = (uid: string | null | undefined) => isTheme ? 'theme' : uid ? `${key}_${uid}` : null;
-
-  const [state, setState] = useState<T>(() => {
-    const initialKey = getStorageKey(userId);
-    try {
-      if (isTheme) {
-        const storedTheme = window.localStorage.getItem('theme');
-        return (storedTheme === 'dark') as T;
-      }
-      if (!initialKey) return defaultValue;
-
-      const storedValue = window.localStorage.getItem(initialKey);
-      return storedValue ? JSON.parse(storedValue) : defaultValue;
-    } catch (error) {
-      console.error(`Error reading localStorage key "${initialKey}":`, error);
-      return defaultValue;
+const useDarkMode = () => {
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    // A lógica inicial de tema está no script em index.html para evitar FOUC.
+    // Aqui, apenas lemos o valor para sincronizar o estado do React.
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('theme') === 'dark';
     }
+    return false;
   });
 
-  // Effect to save state when it or the user changes
   useEffect(() => {
-    const storageKey = getStorageKey(userId);
-    try {
-      if (isTheme) {
-        window.localStorage.setItem('theme', state ? 'dark' : 'light');
-        return;
-      }
-      if (!storageKey) return;
-
-      if (state === null || state === undefined) {
-        window.localStorage.removeItem(storageKey);
-      } else {
-        window.localStorage.setItem(storageKey, JSON.stringify(state));
-      }
-    } catch (error) {
-      console.error(`Error setting localStorage key "${storageKey}":`, error);
-    }
-  }, [state, userId, key, isTheme]);
-  
-  // Effect to reload data from localStorage when the user ID changes
-  useEffect(() => {
-    if (isTheme) return; // Theme is global, not user-dependent
-
-    const storageKey = getStorageKey(userId);
-    if (!storageKey) {
-      setState(defaultValue); // Reset to default when logged out
-      return;
-    }
-    try {
-      const storedValue = window.localStorage.getItem(storageKey);
-      setState(storedValue ? JSON.parse(storedValue) : defaultValue);
-    } catch (error) {
-      console.error(`Error reloading state for key "${storageKey}":`, error);
-      setState(defaultValue);
-    }
-    // Intentionally omitting defaultValue from deps array to prevent potential loops
-    // if it's an object/array that is not memoized by the parent component.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, key, isTheme]);
-
-
-  return [state, setState];
-};
-
-
-const useDarkMode = () => {
-  const [isDarkMode, setIsDarkMode] = usePersistentState<boolean>('theme', document.documentElement.classList.contains('dark'));
-
-  useEffect(() => {
+    const newTheme = isDarkMode ? 'dark' : 'light';
+    localStorage.setItem('theme', newTheme);
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
     } else {
@@ -116,15 +59,17 @@ const useDarkMode = () => {
 const App: React.FC = () => {
   const [activeUser, setActiveUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [dataLoading, setDataLoading] = useState(false);
+  const initialLoadComplete = useRef(false);
   
   const userId = activeUser?.id || null;
   
   const [page, setPage] = useState<Page>('dashboard');
-  const [ingredients, setIngredients] = usePersistentState<Ingredient[]>('ingredients', defaultIngredients, userId);
-  const [packaging, setPackaging] = usePersistentState<Packaging[]>('packaging', defaultPackaging, userId);
-  const [recipes, setRecipes] = usePersistentState<Recipe[]>('recipes', defaultRecipes, userId);
-  const [fillings, setFillings] = usePersistentState<Recipe[]>('fillings', [], userId);
-  const [settings, setSettings] = usePersistentState<AppSettings>('settings', defaultSettings, userId);
+  const [ingredients, setIngredients] = useState<Ingredient[]>(defaultIngredients);
+  const [packaging, setPackaging] = useState<Packaging[]>(defaultPackaging);
+  const [recipes, setRecipes] = useState<Recipe[]>(defaultRecipes);
+  const [fillings, setFillings] = useState<Recipe[]>([]);
+  const [settings, setSettings] = useState<AppSettings>(defaultSettings);
   
   const [view, setView] = useState<'landing' | 'login' | 'register'>('landing');
   
@@ -234,6 +179,81 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
+  // Effect for Loading data from Firestore
+  useEffect(() => {
+    if (!userId) {
+        // User logged out, reset to defaults
+        setIngredients(defaultIngredients);
+        setPackaging(defaultPackaging);
+        setRecipes(defaultRecipes);
+        setFillings([]);
+        setSettings(defaultSettings);
+        initialLoadComplete.current = false;
+        setDataLoading(false);
+        return;
+    }
+
+    setDataLoading(true);
+    initialLoadComplete.current = false;
+    
+    const fetchData = async () => {
+        const userDocRef = doc(db, "appData", userId);
+        try {
+            const docSnap = await getDoc(userDocRef);
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                setIngredients(data.ingredients || defaultIngredients);
+                setPackaging(data.packaging || defaultPackaging);
+                setRecipes(data.recipes || defaultRecipes);
+                setFillings(data.fillings || []);
+                setSettings(data.settings || defaultSettings);
+            } else {
+                // New user, stick with defaults that are already set.
+            }
+            // Only set load as complete on success
+            initialLoadComplete.current = true;
+        } catch (error) {
+            console.error("Failed to load user data:", error);
+            alert("Ocorreu um erro ao carregar seus dados. Por favor, recarregue a página.");
+            // On error, we don't set initialLoadComplete to true, preventing an overwrite.
+        } finally {
+            setDataLoading(false);
+        }
+    };
+
+    fetchData();
+  }, [userId]);
+
+  // Effect for Saving data to Firestore (debounced)
+  useEffect(() => {
+    const handler = setTimeout(() => {
+        if (userId && initialLoadComplete.current) {
+            const saveData = async () => {
+                const userDocRef = doc(db, "appData", userId);
+                const dataToSave = {
+                    ingredients,
+                    packaging,
+                    recipes,
+                    fillings,
+                    settings,
+                };
+                try {
+                    await setDoc(userDocRef, dataToSave);
+                } catch (error) {
+                    console.error("Failed to save user data:", error);
+                    alert("Ocorreu um erro ao salvar seus dados. Verifique sua conexão e tente novamente.");
+                }
+            };
+            saveData();
+        }
+    }, 1500); // Debounce saves by 1.5 seconds
+
+    return () => {
+        clearTimeout(handler);
+    };
+  }, [ingredients, packaging, recipes, fillings, settings, userId]);
+
+
   const ingredientsWithFillings = useMemo(() => {
     const fillingsAsIngredients: Ingredient[] = fillings
       .filter(f => calculateCosts(f, ingredients, packaging, settings, 'filling').netYieldAmount > 0)
@@ -250,51 +270,6 @@ const App: React.FC = () => {
     });
     return [...ingredients, ...fillingsAsIngredients];
   }, [ingredients, fillings, packaging, settings]);
-
-  useEffect(() => {
-    if (!userId) return; // Don't run migrations if no user
-    const needsIngredientMigration = ingredients.some(ing => !ing.history || ing.history.some(p => p.unit === undefined));
-    if (needsIngredientMigration) {
-        const migratedIngredients = ingredients.map(ing => {
-            let history = ing.history;
-            if (!history) {
-                history = [{
-                    id: ing.id + '-' + new Date().getTime(),
-                    date: ing.purchaseDate || new Date().toISOString().split('T')[0],
-                    supplier: ing.supplier,
-                    packagePrice: ing.packagePrice,
-                    packageAmount: ing.packageAmount,
-                    unit: ing.unit,
-                }];
-            }
-            const historyWithUnits = history.map(p => ({ ...p, unit: p.unit || ing.unit }));
-            const sortedHistory = historyWithUnits.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-            const latestPurchase = sortedHistory[0];
-            if (!latestPurchase) return { ...ing, history: sortedHistory };
-            return {
-                ...ing,
-                supplier: latestPurchase.supplier,
-                packagePrice: latestPurchase.packagePrice,
-                packageAmount: latestPurchase.packageAmount,
-                unit: latestPurchase.unit,
-                purchaseDate: latestPurchase.date,
-                history: sortedHistory,
-            };
-        });
-        setIngredients(migratedIngredients);
-    }
-    
-    const needsRecipeMigration = recipes.some(r => r.evaporationPercentage === undefined);
-    if (needsRecipeMigration) {
-      setRecipes(prev => prev.map(r => r.evaporationPercentage === undefined ? { ...r, evaporationPercentage: 0 } : r));
-    }
-
-    const needsFillingMigration = fillings.some(r => r.evaporationPercentage === undefined);
-    if (needsFillingMigration) {
-      setFillings(prev => prev.map(r => r.evaporationPercentage === undefined ? { ...r, evaporationPercentage: 0 } : r));
-    }
-}, [userId, ingredients, recipes, fillings, setIngredients, setRecipes, setFillings]);
-
 
   // --- RECIPE HANDLERS ---
   const handleSaveRecipe = (recipe: Recipe) => {
@@ -644,6 +619,15 @@ const App: React.FC = () => {
                 />
             )}
         </>
+    );
+  }
+
+  if (dataLoading) {
+    return (
+      <div className="bg-rose-50 dark:bg-gray-900 min-h-screen flex flex-col items-center justify-center">
+        <h1 className="font-display text-4xl font-bold text-brand-primary animate-pulse">Precify</h1>
+        <p className="mt-4 text-brand-light-text dark:text-gray-400">Carregando seus dados...</p>
+      </div>
     );
   }
 

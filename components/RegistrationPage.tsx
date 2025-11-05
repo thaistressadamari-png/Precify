@@ -156,7 +156,7 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ onRegisterSu
     }
   };
 
-  const inputClasses = "mt-1 block w-full px-3 py-3 bg-white dark:bg-gray-700 dark:text-gray-200 border border-rose-200 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-secondary focus:border-brand-secondary";
+  const inputClasses = "mt-1 block w-full px-3 py-3 bg-white text-brand-text dark:bg-gray-700 dark:text-gray-200 border border-rose-200 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-secondary focus:border-brand-secondary";
 
   return (
     <div className="bg-rose-50 dark:bg-gray-900 min-h-screen flex items-center justify-center p-4 font-sans animate-fade-in">

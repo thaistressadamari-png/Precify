@@ -81,7 +81,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateToLanding, onNav
   };
 
 
-  const inputClasses = "block w-full px-3 py-3 bg-white dark:bg-gray-700 dark:text-gray-200 border border-rose-200 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-secondary focus:border-brand-secondary";
+  const inputClasses = "block w-full px-3 py-3 bg-white text-brand-text dark:bg-gray-700 dark:text-gray-200 border border-rose-200 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-secondary focus:border-brand-secondary";
   const labelClasses = "block text-sm font-medium text-brand-light-text dark:text-gray-400 mb-1";
 
 
