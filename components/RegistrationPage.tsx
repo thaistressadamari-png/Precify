@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { auth, db, googleProvider } from './firebase';
 import { createUserWithEmailAndPassword, updateProfile, signInWithPopup } from 'firebase/auth';
 import { doc, setDoc, getDoc, Timestamp } from 'firebase/firestore';
 import { GoogleIcon } from './icons/GoogleIcon';
 import type { User } from '../types';
+import { trackEvent } from './utils';
 
 interface RegistrationPageProps {
   onRegisterSuccess: (user: User) => void;
@@ -30,6 +31,10 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ onRegisterSu
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
+  useEffect(() => {
+    trackEvent('view_register_page');
+  }, []);
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     let formattedValue = value;
@@ -53,6 +58,7 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ onRegisterSu
     }
 
     setLoading(true);
+    trackEvent('submit_registration_form', { method: 'email' });
 
     try {
         const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
@@ -103,6 +109,7 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ onRegisterSu
   const handleGoogleSignUp = async () => {
     setError('');
     setGoogleLoading(true);
+    trackEvent('submit_registration_form', { method: 'google' });
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const user = result.user;

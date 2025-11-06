@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CalculatorIcon } from './icons/CalculatorIcon';
 import { ClipboardListIcon } from './icons/ClipboardListIcon';
 import { ChartBarIcon } from './icons/ChartBarIcon';
 import { DocumentArrowDownIcon } from './icons/DocumentArrowDownIcon';
 import { XMarkIcon } from './icons/XMarkIcon';
+import { trackEvent } from './utils';
 
 interface LandingPageProps {
   onNavigateToRegister: () => void;
@@ -12,6 +13,21 @@ interface LandingPageProps {
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToRegister, onNavigateToLogin }) => {
   const [expandedImageSrc, setExpandedImageSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    trackEvent('view_landing_page');
+  }, []);
+
+  const handleRegisterClick = (position: string) => {
+    trackEvent('click_register_cta', { cta_position: position });
+    onNavigateToRegister();
+  };
+
+  const handleLoginClick = (position: string) => {
+    trackEvent('click_login_cta', { cta_position: position });
+    onNavigateToLogin();
+  };
+
 
   const FeatureCard: React.FC<{ icon: React.ElementType, title: string, children: React.ReactNode }> = ({ icon: Icon, title, children }) => (
     <div className="bg-white/50 dark:bg-gray-800/50 p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700 backdrop-blur-sm text-center transform hover:-translate-y-2 transition-transform duration-300">
@@ -30,7 +46,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToRegister, 
         <div className="container mx-auto px-6 py-4 flex justify-between items-center">
           <h1 className="font-display text-3xl font-bold text-brand-primary">Precify</h1>
           <button
-            onClick={onNavigateToLogin}
+            onClick={() => handleLoginClick('header')}
             className="inline-block bg-transparent hover:bg-rose-100 dark:hover:bg-gray-800 text-brand-primary dark:text-rose-200 font-bold py-2 px-6 rounded-lg border-2 border-brand-primary transition-colors"
           >
             Acessar
@@ -51,7 +67,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToRegister, 
                 O Precify é a ferramenta completa de gestão e precificação feita especialmente para confeiteiros e pequenos negócios de alimentação. Controle seus custos, calcule preços de venda com precisão e descubra a lucratividade real de cada receita — tudo em um só lugar.
               </p>
               <button
-                onClick={onNavigateToRegister}
+                onClick={() => handleRegisterClick('hero')}
                 className="bg-brand-primary hover:bg-rose-700 text-white font-bold py-3 px-8 rounded-lg shadow-lg transition-transform transform hover:scale-105 text-lg" style={{ animationDelay: '0.4s' }}
               >
                 👉 Começar agora gratuitamente
@@ -264,7 +280,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigateToRegister, 
               Descubra como é simples ter controle total sobre seus custos e lucros. Cadastre-se agora e teste o Precify gratuitamente.
             </p>
             <button
-              onClick={onNavigateToRegister}
+              onClick={() => handleRegisterClick('footer')}
               className="bg-brand-primary hover:bg-rose-700 text-white font-bold py-4 px-10 rounded-lg shadow-2xl transition-transform transform hover:scale-105 text-xl"
             >
               👉 Experimentar agora – é grátis

@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ArrowLeftIcon } from './icons/ArrowLeftIcon';
 import { signInWithPopup, signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 import { auth, googleProvider, db } from './firebase';
 import { doc, getDoc, setDoc, Timestamp } from 'firebase/firestore';
 import { GoogleIcon } from './icons/GoogleIcon';
+import { trackEvent } from './utils';
 
 interface LoginPageProps {
   onNavigateToLanding: () => void;
@@ -17,10 +18,15 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateToLanding, onNav
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
+  useEffect(() => {
+    trackEvent('view_login_page');
+  }, []);
+
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
+    trackEvent('submit_login_form', { method: 'email' });
 
     try {
         await signInWithEmailAndPassword(auth, email, password);
@@ -36,6 +42,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateToLanding, onNav
   const handleGoogleSignIn = async () => {
     setError('');
     setGoogleLoading(true);
+    trackEvent('submit_login_form', { method: 'google' });
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const user = result.user;

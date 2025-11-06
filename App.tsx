@@ -32,6 +32,7 @@ import { SubscriptionPage } from './components/SubscriptionPage';
 import { FeedbackModal } from './components/FeedbackModal';
 import { AdminChoicePage } from './components/AdminChoicePage';
 import { AdminDashboard } from './components/AdminDashboard';
+import { trackEvent } from './components/utils';
 
 const useDarkMode = () => {
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
@@ -101,6 +102,9 @@ const App: React.FC = () => {
             if (userDocSnap.exists()) {
               const userData = userDocSnap.data();
 
+              // Track successful login
+              trackEvent('login', { method: user.providerData[0]?.providerId || 'email' });
+
               const fullUser: User = {
                 id: user.uid,
                 email: user.email!,
@@ -136,8 +140,10 @@ const App: React.FC = () => {
                 setShowFeedbackModal(false);
               }
             } else {
-               // This can happen if user signed up with Google but doc creation failed.
-               // Let's create it now with a trial period.
+               // This means it's a new user registration that just completed.
+               // Track successful registration event.
+               trackEvent('sign_up', { method: user.providerData[0]?.providerId || 'email' });
+               
                 const trialEndDate = new Date(Date.now() + 4 * 24 * 60 * 60 * 1000); // 4-day free trial
                 const trialTimestamp = Timestamp.fromDate(trialEndDate);
 
