@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import type { AppSettings, User } from '../types';
 import { auth } from './firebase';
 import { updateProfile, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential, updateEmail } from 'firebase/auth';
+import { safeParseFloat } from './utils';
 
 interface SettingsProps {
   settings: AppSettings;
@@ -75,7 +76,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onUpdateSettings, 
   
   const handleSettingsInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    onUpdateSettings({ ...settings, [name]: parseFloat(value) || 0 });
+    onUpdateSettings({ ...settings, [name]: safeParseFloat(value) });
   };
 
   const handleSaveName = async () => {

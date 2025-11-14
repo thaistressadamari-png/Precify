@@ -1,7 +1,7 @@
-
 import React, { useState, useEffect } from 'react';
 import type { Packaging } from '../types';
 import { PlusIcon } from './icons/PlusIcon';
+import { safeParseFloat } from './utils';
 
 interface PackagingFormProps {
     onSave: (packaging: Packaging) => void;
@@ -35,7 +35,7 @@ export const PackagingForm: React.FC<PackagingFormProps> = ({ onSave, onCancel, 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         const isNumber = ['price', 'amount'].includes(name);
-        setPackaging(prev => ({ ...prev, [name]: isNumber ? parseFloat(value) || 0 : value }));
+        setPackaging(prev => ({ ...prev, [name]: isNumber ? safeParseFloat(value) : value }));
     };
 
     const handleSubmit = (e: React.FormEvent) => {

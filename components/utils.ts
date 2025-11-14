@@ -26,3 +26,13 @@ export const formatCurrency = (value: number) => {
     }
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 };
+
+export const safeParseFloat = (value: string | number | undefined | null): number => {
+    if (value === null || value === undefined) return 0;
+    if (typeof value === 'number') {
+        return isFinite(value) ? value : 0;
+    }
+    // Handle strings, which might have commas for decimals
+    const num = parseFloat(String(value).replace(',', '.'));
+    return isFinite(num) ? num : 0;
+};

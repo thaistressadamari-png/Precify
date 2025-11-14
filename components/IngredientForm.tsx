@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import type { Ingredient, Purchase, Unit } from '../types';
 import { PlusIcon } from './icons/PlusIcon';
 import { PencilIcon } from './icons/PencilIcon';
+import { safeParseFloat } from './utils';
 
 type IngredientFormData = {
   name: string;
@@ -79,8 +80,8 @@ export const IngredientForm: React.FC<IngredientFormProps> = ({ onSave, onCancel
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        const packagePrice = parseFloat(formData.packagePrice.replace(',', '.')) || 0;
-        const packageAmount = parseFloat(formData.packageAmount.replace(',', '.')) || 0;
+        const packagePrice = safeParseFloat(formData.packagePrice);
+        const packageAmount = safeParseFloat(formData.packageAmount);
 
         if (!formData.name || !formData.purchaseDate || packagePrice <= 0 || packageAmount <= 0) {
             alert("Por favor, preencha nome, data, preço e quantidade corretamente.");
@@ -98,7 +99,11 @@ export const IngredientForm: React.FC<IngredientFormProps> = ({ onSave, onCancel
         const updateIngredientFromHistory = (ingredient: Omit<Ingredient, 'id'>, newHistory: Purchase[]): Ingredient => {
             const sorted = newHistory.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
             if (sorted.length === 0) {
-                 return { ...ingredient, id: (ingredient as Ingredient).id || '', history: [], purchaseDate: undefined, supplier: undefined, packagePrice: 0, packageAmount: 0, unit: 'g' };
+                 const newIngredient = { ...ingredient, id: (ingredient as Ingredient).id || '', history: [], packagePrice: 0, packageAmount: 0, unit: 'g' };
+                 // Remove optional fields instead of setting them to undefined to prevent Firestore errors
+                 delete (newIngredient as Partial<Ingredient>).purchaseDate;
+                 delete (newIngredient as Partial<Ingredient>).supplier;
+                 return newIngredient as Ingredient;
             }
             const latest = sorted[0];
             return {

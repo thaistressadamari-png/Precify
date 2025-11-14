@@ -4,7 +4,7 @@ import { PlusIcon } from './icons/PlusIcon';
 import { TrashIcon } from './icons/TrashIcon';
 import { ConfirmModal } from './ConfirmModal';
 import { calculateCosts, convertToBaseUnitAmount } from './costCalculator';
-import { formatCurrency } from './utils';
+import { formatCurrency, safeParseFloat } from './utils';
 import { InformationCircleIcon } from './icons/InformationCircleIcon';
 
 interface RecipePricerProps {
@@ -123,7 +123,7 @@ const TimeInput: React.FC<{
     const [timeUnit, setTimeUnit] = useState<'minutos' | 'horas'>('minutos');
 
     useEffect(() => {
-        const currentMinutesInState = (parseFloat(timeValue) || 0) * (timeUnit === 'horas' ? 60 : 1);
+        const currentMinutesInState = (safeParseFloat(timeValue)) * (timeUnit === 'horas' ? 60 : 1);
         if (Math.abs(currentMinutesInState - totalMinutes) < 1e-9) {
             return;
         }
@@ -138,7 +138,7 @@ const TimeInput: React.FC<{
     const handleValueChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const value = e.target.value;
         setTimeValue(value);
-        const numericValue = parseFloat(value) || 0;
+        const numericValue = safeParseFloat(value);
         onMinutesChange(timeUnit === 'horas' ? numericValue * 60 : numericValue);
     };
 
@@ -146,7 +146,7 @@ const TimeInput: React.FC<{
         const newUnit = e.target.value as 'minutos' | 'horas';
         const oldUnit = timeUnit;
         
-        const currentMinutes = (parseFloat(timeValue) || 0) * (oldUnit === 'horas' ? 60 : 1);
+        const currentMinutes = (safeParseFloat(timeValue)) * (oldUnit === 'horas' ? 60 : 1);
         
         setTimeUnit(newUnit);
         
@@ -248,7 +248,7 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
     const { name, value } = e.target;
     const isNumber = ['yieldAmount', 'evaporationPercentage', 'variableCostsPercentage', 'profitMargin'].includes(name);
     
-    setRecipe(prev => ({ ...prev, [name]: isNumber ? parseFloat(value) || 0 : value } as any));
+    setRecipe(prev => ({ ...prev, [name]: isNumber ? safeParseFloat(value) : value } as any));
   };
   
   const handleMinutesChange = useCallback((field: keyof Omit<Recipe, 'id'>, minutes: number) => {
@@ -416,22 +416,29 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
         return;
     }
 
-    const recipeToSave: Recipe = {
+    // Create a mutable copy to work with. Using 'any' to allow property deletion.
+    const recipeToSave: any = {
       ...(recipeToEdit ? { id: recipeToEdit.id } : { id: new Date().toISOString() }),
       ...recipe,
-      preparationMethod: type === 'recipe' ? recipe.preparationMethod?.filter(item => item.trim() !== '') : undefined,
-      observations: type === 'recipe' ? recipe.observations?.filter(item => item.trim() !== '') : undefined,
     };
 
-    if (type === 'filling') {
-        recipeToSave.variableCostsPercentage = undefined;
-        recipeToSave.profitMargin = undefined;
-    }
     if (type === 'recipe') {
-        recipeToSave.evaporationPercentage = 0; // Evaporation not used for recipes
+        // For recipes, clean up empty steps/observations but ensure the fields exist as empty arrays.
+        recipeToSave.preparationMethod = recipe.preparationMethod?.filter(item => item.trim() !== '') || [];
+        recipeToSave.observations = recipe.observations?.filter(item => item.trim() !== '') || [];
+        // As per original logic for recipes
+        recipeToSave.evaporationPercentage = 0;
+    } else { // type === 'filling'
+        // For fillings, remove recipe-specific fields to avoid storing them as undefined.
+        // These fields are not applicable to fillings.
+        delete recipeToSave.variableCostsPercentage;
+        delete recipeToSave.profitMargin;
+        delete recipeToSave.preparationMethod;
+        delete recipeToSave.observations;
+        delete recipeToSave.observationsTitle;
     }
 
-    onSave(recipeToSave);
+    onSave(recipeToSave as Recipe);
   };
   
   const getModalMessage = () => {
@@ -556,7 +563,7 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
                                 </div>
                                 <div className="flex-grow">
                                     <label className="text-xs text-brand-light-text dark:text-gray-400">Qtd.</label>
-                                    <input type="number" value={ing.amount || ''} onChange={(e) => updateIngredient(section.id, ing.id, 'amount', parseFloat(e.target.value) || 0)} className={inputFieldClasses} min="0" step="any" />
+                                    <input type="number" value={ing.amount || ''} onChange={(e) => updateIngredient(section.id, ing.id, 'amount', safeParseFloat(e.target.value))} className={inputFieldClasses} min="0" step="any" />
                                 </div>
                                 <div className="flex items-end gap-2">
                                     <div className="flex-grow">
@@ -597,7 +604,7 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
                             <div className="flex items-end gap-2">
                                 <div className="flex-grow">
                                     <label className="text-xs text-brand-light-text dark:text-gray-400">Qtd.</label>
-                                    <input type="number" value={pkg.amount || ''} onChange={(e) => updatePackaging(pkg.id, 'amount', parseFloat(e.target.value) || 0)} className={inputFieldClasses} min="0" step="any" />
+                                    <input type="number" value={pkg.amount || ''} onChange={(e) => updatePackaging(pkg.id, 'amount', safeParseFloat(e.target.value))} className={inputFieldClasses} min="0" step="any" />
                                 </div>
                                 <button type="button" onClick={() => triggerRemovePackaging(pkg)} className="text-rose-400 hover:text-brand-primary p-2 rounded-full hover:bg-rose-100 dark:hover:bg-gray-600"><TrashIcon className="w-5 h-5" /></button>
                             </div>

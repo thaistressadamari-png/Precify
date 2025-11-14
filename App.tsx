@@ -36,6 +36,8 @@ import { trackEvent } from './components/utils';
 
 const useDarkMode = () => {
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    // A lógica inicial de tema está no script em index.html para evitar FOUC.
+    // Aqui, apenas lemos o valor para sincronizar o estado do React.
     if (typeof window !== 'undefined') {
       return localStorage.getItem('theme') === 'dark';
     }
@@ -100,6 +102,7 @@ const App: React.FC = () => {
             if (userDocSnap.exists()) {
               const userData = userDocSnap.data();
 
+              // Track successful login
               trackEvent('login', { method: user.providerData[0]?.providerId || 'email' });
 
               const fullUser: User = {
@@ -122,6 +125,7 @@ const App: React.FC = () => {
 
               setActiveUser(fullUser);
 
+              // Subscription logic
               const trialExpired = fullUser.trialEndsAt && fullUser.trialEndsAt.toDate() < new Date();
               const isSubscribed = fullUser.isSubscribed;
               const hasGivenFeedback = fullUser.hasGivenFeedback;
@@ -136,6 +140,8 @@ const App: React.FC = () => {
                 setShowFeedbackModal(false);
               }
             } else {
+               // This means it's a new user registration that just completed.
+               // Track successful registration event.
                trackEvent('sign_up', { method: user.providerData[0]?.providerId || 'email' });
                
                 const trialEndDate = new Date(Date.now() + 4 * 24 * 60 * 60 * 1000); // 4-day free trial
@@ -182,6 +188,7 @@ const App: React.FC = () => {
   // Effect for Loading data from Firestore
   useEffect(() => {
     if (!userId) {
+        // User logged out, reset to defaults
         setIngredients(defaultIngredients);
         setPackaging(defaultPackaging);
         setRecipes(defaultRecipes);
@@ -192,40 +199,29 @@ const App: React.FC = () => {
         return;
     }
 
+    setDataLoading(true);
+    initialLoadComplete.current = false;
+    
     const fetchData = async () => {
-        setDataLoading(true);
-        initialLoadComplete.current = false;
+        const userDocRef = doc(db, "appData", userId);
         try {
-            const ingredientsRef = doc(db, "appData_ingredients", userId);
-            const packagingRef = doc(db, "appData_packaging", userId);
-            const recipesRef = doc(db, "appData_recipes", userId);
-            const fillingsRef = doc(db, "appData_fillings", userId);
-            const settingsRef = doc(db, "appData_settings", userId);
-
-            const [
-                ingredientsSnap,
-                packagingSnap,
-                recipesSnap,
-                fillingsSnap,
-                settingsSnap,
-            ] = await Promise.all([
-                getDoc(ingredientsRef),
-                getDoc(packagingRef),
-                getDoc(recipesRef),
-                getDoc(fillingsRef),
-                getDoc(settingsRef),
-            ]);
-
-            setIngredients(ingredientsSnap.exists() ? ingredientsSnap.data().ingredients : defaultIngredients);
-            setPackaging(packagingSnap.exists() ? packagingSnap.data().packaging : defaultPackaging);
-            setRecipes(recipesSnap.exists() ? recipesSnap.data().recipes : defaultRecipes);
-            setFillings(fillingsSnap.exists() ? fillingsSnap.data().fillings : []);
-            setSettings(settingsSnap.exists() ? settingsSnap.data() as AppSettings : defaultSettings);
-            
+            const docSnap = await getDoc(userDocRef);
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                setIngredients(data.ingredients || defaultIngredients);
+                setPackaging(data.packaging || defaultPackaging);
+                setRecipes(data.recipes || defaultRecipes);
+                setFillings(data.fillings || []);
+                setSettings(data.settings || defaultSettings);
+            } else {
+                // New user, stick with defaults that are already set.
+            }
+            // Only set load as complete on success
             initialLoadComplete.current = true;
         } catch (error) {
             console.error("Failed to load user data:", error);
             alert("Ocorreu um erro ao carregar seus dados. Por favor, recarregue a página.");
+            // On error, we don't set initialLoadComplete to true, preventing an overwrite.
         } finally {
             setDataLoading(false);
         }
@@ -234,70 +230,81 @@ const App: React.FC = () => {
     fetchData();
   }, [userId]);
   
-  const useDebouncedSave = (collectionName: string, data: any, isObjectData: boolean = false) => {
-    useEffect(() => {
-        if (!initialLoadComplete.current || !userId) {
-            return;
-        }
-
-        const handler = setTimeout(async () => {
-            const docRef = doc(db, collectionName, userId);
-            const collectionKey = collectionName.split('_')[1];
-            const dataToSave = isObjectData ? data : { [collectionKey]: data };
-            try {
-                await setDoc(docRef, dataToSave);
-            } catch (error) {
-                console.error(`Failed to save ${collectionName}:`, error);
-                alert(`Ocorreu um erro ao salvar seus dados de ${collectionKey}. Verifique sua conexão. Se o problema persistir, o volume de dados pode ser muito grande.`);
-            }
-        }, 1500);
-
-        return () => {
-            clearTimeout(handler);
-        };
-    }, [data, userId, collectionName, isObjectData]);
-  };
-  
-  useDebouncedSave('appData_ingredients', ingredients);
-  useDebouncedSave('appData_packaging', packaging);
-  useDebouncedSave('appData_recipes', recipes);
-  useDebouncedSave('appData_fillings', fillings);
-  useDebouncedSave('appData_settings', settings, true);
-  
-  const saveImmediate = useCallback(async (collectionName: string, data: any, isObjectData = false) => {
+  const saveData = useCallback(async (dataToSave: {
+    ingredients: Ingredient[],
+    packaging: Packaging[],
+    recipes: Recipe[],
+    fillings: Recipe[],
+    settings: AppSettings,
+  }) => {
     if (!userId) return;
-
-    const docRef = doc(db, collectionName, userId);
-    const collectionKey = collectionName.split('_')[1];
-    const dataToSave = isObjectData ? data : { [collectionKey]: data };
-
+    const userDocRef = doc(db, "appData", userId);
     try {
-        await setDoc(docRef, dataToSave);
+        await setDoc(userDocRef, dataToSave);
     } catch (error) {
-        console.error(`Failed to immediately save ${collectionName}:`, error);
-        alert(`Ocorreu um erro ao importar seus dados de ${collectionKey}. Verifique sua conexão e tente novamente.`);
+        console.error("Failed to save user data:", error);
+        alert("Ocorreu um erro ao salvar seus dados. Verifique sua conexão e tente novamente.");
     }
   }, [userId]);
 
+
+  // Effect for Saving data to Firestore (debounced for regular changes)
+  useEffect(() => {
+    const handler = setTimeout(() => {
+        if (userId && initialLoadComplete.current) {
+            saveData({ ingredients, packaging, recipes, fillings, settings });
+        }
+    }, 1500); // Debounce saves by 1.5 seconds
+
+    return () => {
+        clearTimeout(handler);
+    };
+  }, [ingredients, packaging, recipes, fillings, settings, userId, saveData]);
+  
+  // Handlers for immediate save after import
   const handleImportIngredients = useCallback((newIngredients: Ingredient[]) => {
     setIngredients(newIngredients);
-    saveImmediate('appData_ingredients', newIngredients);
-  }, [saveImmediate]);
+    saveData({
+        ingredients: newIngredients,
+        packaging,
+        recipes,
+        fillings,
+        settings,
+    });
+  }, [packaging, recipes, fillings, settings, saveData]);
 
   const handleImportPackaging = useCallback((newPackaging: Packaging[]) => {
       setPackaging(newPackaging);
-      saveImmediate('appData_packaging', newPackaging);
-  }, [saveImmediate]);
+      saveData({
+          ingredients,
+          packaging: newPackaging,
+          recipes,
+          fillings,
+          settings,
+      });
+  }, [ingredients, recipes, fillings, settings, saveData]);
 
   const handleImportRecipes = useCallback((newRecipes: Recipe[]) => {
       setRecipes(newRecipes);
-      saveImmediate('appData_recipes', newRecipes);
-  }, [saveImmediate]);
+      saveData({
+          ingredients,
+          packaging,
+          recipes: newRecipes,
+          fillings,
+          settings,
+      });
+  }, [ingredients, packaging, fillings, settings, saveData]);
 
   const handleImportFillings = useCallback((newFillings: Recipe[]) => {
       setFillings(newFillings);
-      saveImmediate('appData_fillings', newFillings);
-  }, [saveImmediate]);
+      saveData({
+          ingredients,
+          packaging,
+          recipes,
+          fillings: newFillings,
+          settings,
+      });
+  }, [ingredients, packaging, recipes, settings, saveData]);
 
 
   const ingredientsWithFillings = useMemo(() => {
@@ -396,7 +403,9 @@ const App: React.FC = () => {
       const ingredient = JSON.parse(JSON.stringify(newIngredients[ingredientIndex]));
       ingredient.history = ingredient.history.filter((p: any) => p.id !== purchaseId);
       if (ingredient.history.length === 0) {
-          ingredient.packagePrice = 0; ingredient.packageAmount = 0; ingredient.purchaseDate = undefined; ingredient.supplier = undefined;
+          ingredient.packagePrice = 0; ingredient.packageAmount = 0; 
+          delete ingredient.purchaseDate;
+          delete ingredient.supplier;
       } else {
           ingredient.history.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
           const latestPurchase = ingredient.history[0];
@@ -435,7 +444,7 @@ const App: React.FC = () => {
         setActiveUser(prevUser => prevUser ? { ...prevUser, ...updatedData } : null);
     } catch (error) {
         console.error("Error updating user data in Firestore:", error);
-        throw error;
+        throw error; // Re-throw to be caught by the caller
     }
   };
 
@@ -468,6 +477,7 @@ const App: React.FC = () => {
         return;
     }
 
+    // Optimistic UI update to grant immediate access
     const currentTrialEnd = activeUser.trialEndsAt ? activeUser.trialEndsAt.toDate() : new Date();
     const newTrialEnd = new Date(currentTrialEnd.getTime() + 1 * 24 * 60 * 60 * 1000); // Add 1 day
     const newTrialTimestamp = Timestamp.fromDate(newTrialEnd);
@@ -475,6 +485,7 @@ const App: React.FC = () => {
     setActiveUser(prev => prev ? {...prev, paymentConfirmationClicked: true, trialEndsAt: newTrialTimestamp} : null);
     setShowSubscriptionFlow(false);
 
+    // Perform background update
     try {
         const userDocRef = doc(db, "users", activeUser.id);
 
@@ -483,6 +494,7 @@ const App: React.FC = () => {
             trialEndsAt: newTrialTimestamp
         });
 
+        // Log action
         await addDoc(collection(db, 'action_history'), {
             timestamp: Timestamp.now(),
             actionType: 'USER_CONFIRMED_PAYMENT',
@@ -492,6 +504,8 @@ const App: React.FC = () => {
         });
     } catch (error) {
         console.error("Error confirming payment:", error);
+        // User already has access from optimistic update. We can optionally revert or notify.
+        // For now, logging the error is sufficient.
     }
   };
 
