@@ -692,6 +692,12 @@ const App: React.FC = () => {
               <span className="text-brand-light-text dark:text-gray-300 hidden sm:block">
                   Olá, <span className="font-semibold text-brand-text dark:text-rose-100">{activeUser.name.split(' ')[0]}</span>
               </span>
+              {isCurrentUserAdmin && (
+                <button onClick={() => setIsAdminMode(true)} className="flex items-center justify-center gap-2 p-2 rounded-lg text-sm font-medium transition-colors text-brand-light-text dark:text-gray-400 hover:bg-rose-100 dark:hover:bg-gray-700">
+                  <AdjustmentsVerticalIcon className="w-6 h-6" />
+                  <span className="hidden md:block">Painel Admin</span>
+                </button>
+              )}
               <button onClick={() => setIsDarkMode(!isDarkMode)} className="flex items-center justify-center gap-2 p-2 rounded-lg text-sm font-medium transition-colors text-brand-light-text dark:text-gray-400 hover:bg-rose-100 dark:hover:bg-gray-700">
                   {isDarkMode ? <SunIcon className="w-6 h-6" /> : <MoonIcon className="w-6 h-6" />}
                   <span className="hidden md:block">{isDarkMode ? 'Modo Claro' : 'Modo Escuro'}</span>
@@ -708,16 +714,6 @@ const App: React.FC = () => {
                 <NavItem label="Receitas" targetPage="recipes" icon={BookOpenIcon}/>
                 <NavItem label="Recheios" targetPage="fillings" icon={FireIcon}/>
                 <NavItem label="Ajustes" targetPage="settings" icon={AdjustmentsHorizontalIcon}/>
-
-                {isCurrentUserAdmin && (
-                  <button 
-                    onClick={() => setIsAdminMode(true)}
-                    className="flex flex-col items-center justify-center p-2 rounded-lg text-sm font-medium transition-colors w-full text-left lg:flex-row lg:justify-start lg:gap-3 lg:px-3 lg:py-2 text-brand-light-text dark:text-gray-400 hover:bg-rose-100 dark:hover:bg-gray-700"
-                  >
-                    <AdjustmentsVerticalIcon className="w-6 h-6"/>
-                    <span className="mt-1 text-xs lg:mt-0 lg:text-base hidden md:block">Painel Admin</span>
-                  </button>
-                )}
 
                  <div className="border-t border-rose-100 dark:border-gray-700 my-2 hidden lg:block"></div>
 
