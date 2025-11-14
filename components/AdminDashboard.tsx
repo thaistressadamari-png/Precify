@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from './firebase';
-import { collection, getDocs, doc, updateDoc, Timestamp, addDoc, query, orderBy, limit, where } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, Timestamp, addDoc, query, orderBy, limit, where, writeBatch } from 'firebase/firestore';
 import type { User, ActionHistory } from '../types';
 import { ArrowRightOnRectangleIcon } from './icons/ArrowRightOnRectangleIcon';
 import { SearchIcon } from './icons/SearchIcon';
 import { AdjustmentsHorizontalIcon } from './icons/AdjustmentsHorizontalIcon';
+import { ArrowUturnLeftIcon } from './icons/ArrowUturnLeftIcon';
+import { BulkActionModal } from './BulkActionModal';
 
 const UserActionHistoryLog: React.FC<{ userId: string }> = ({ userId }) => {
     const [actions, setActions] = useState<ActionHistory[]>([]);
@@ -58,9 +60,10 @@ const UserActionHistoryLog: React.FC<{ userId: string }> = ({ userId }) => {
 const UserEditModal: React.FC<{
     user: User;
     onClose: () => void;
-    onSave: (userId: string, data: { isSubscribed: boolean, trialEndsAt: Timestamp }, originalUser: User) => void;
+    onSave: (userId: string, data: { isSubscribed: boolean, trialEndsAt: Timestamp, role: 'admin' | 'user' }, originalUser: User) => void;
 }> = ({ user, onClose, onSave }) => {
     const [isSubscribed, setIsSubscribed] = useState(user.isSubscribed || false);
+    const [role, setRole] = useState(user.role || 'user');
     const [trialDate, setTrialDate] = useState(() => {
         if (user.trialEndsAt) {
             return user.trialEndsAt.toDate().toISOString().split('T')[0];
@@ -82,7 +85,7 @@ const UserEditModal: React.FC<{
             alert('Data inválida.');
             return;
         }
-        onSave(user.id, { isSubscribed, trialEndsAt: trialTimestamp }, user);
+        onSave(user.id, { isSubscribed, trialEndsAt: trialTimestamp, role }, user);
     };
 
     return (
@@ -100,6 +103,12 @@ const UserEditModal: React.FC<{
                             <label className="flex items-center gap-3 cursor-pointer">
                                 <input type="checkbox" checked={isSubscribed} onChange={(e) => setIsSubscribed(e.target.checked)} className="h-5 w-5 rounded text-brand-primary focus:ring-brand-secondary border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:focus:ring-offset-gray-800"/>
                                 <span className="font-medium text-brand-text dark:text-gray-200">Assinatura Ativa</span>
+                            </label>
+                        </div>
+                        <div>
+                            <label className="flex items-center gap-3 cursor-pointer">
+                                <input type="checkbox" checked={role === 'admin'} onChange={(e) => setRole(e.target.checked ? 'admin' : 'user')} className="h-5 w-5 rounded text-brand-primary focus:ring-brand-secondary border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:focus:ring-offset-gray-800"/>
+                                <span className="font-medium text-brand-text dark:text-gray-200">Tornar Administrador</span>
                             </label>
                         </div>
                         <div>
@@ -134,13 +143,17 @@ const UserEditModal: React.FC<{
 };
 
 
-export const AdminDashboard: React.FC<{ onLogout: () => void; currentUser: User; }> = ({ onLogout, currentUser }) => {
+export const AdminDashboard: React.FC<{ onLogout: () => void; currentUser: User; onGoToApp: () => void; }> = ({ onLogout, currentUser, onGoToApp }) => {
     const [users, setUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [editingUser, setEditingUser] = useState<User | null>(null);
     const [filter, setFilter] = useState<'all' | 'trial' | 'subscribed' | 'expired'>('all');
+    
+    const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
+    const [bulkAction, setBulkAction] = useState<'extend' | 'subscribe' | null>(null);
+    const [bulkUpdateLoading, setBulkUpdateLoading] = useState(false);
 
     useEffect(() => {
         const fetchUsers = async () => {
@@ -159,7 +172,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void; currentUser: User;
         fetchUsers();
     }, []);
 
-    const handleUpdateUser = async (userId: string, data: { isSubscribed: boolean, trialEndsAt: Timestamp }, originalUser: User) => {
+    const handleUpdateUser = async (userId: string, data: { isSubscribed: boolean, trialEndsAt: Timestamp, role: 'admin' | 'user' }, originalUser: User) => {
         try {
             const userRef = doc(db, 'users', userId);
             await updateDoc(userRef, data);
@@ -173,6 +186,9 @@ export const AdminDashboard: React.FC<{ onLogout: () => void; currentUser: User;
             if (originalDate !== newDate) {
                 changes.push(`data final do teste para '${newDate}'`);
             }
+            if ((originalUser.role || 'user') !== data.role) {
+                changes.push(`permissão para '${data.role === 'admin' ? 'Admin' : 'Usuário'}'`);
+            }
 
             if(changes.length > 0) {
                  await addDoc(collection(db, 'action_history'), {
@@ -183,7 +199,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void; currentUser: User;
                     adminName: currentUser.name,
                     userId: originalUser.id,
                     userName: originalUser.name,
-                    details: { from: { isSubscribed: originalUser.isSubscribed, trialEndsAt: originalDate }, to: { isSubscribed: data.isSubscribed, trialEndsAt: newDate } },
+                    details: { from: { isSubscribed: originalUser.isSubscribed, trialEndsAt: originalDate, role: originalUser.role || 'user' }, to: data },
                 });
             }
 
@@ -233,17 +249,97 @@ export const AdminDashboard: React.FC<{ onLogout: () => void; currentUser: User;
                 user.email.toLowerCase().includes(searchTerm.toLowerCase())
             );
     }, [users, searchTerm, filter]);
+    
+    const handleSelectUser = (userId: string) => {
+        setSelectedUserIds(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(userId)) {
+                newSet.delete(userId);
+            } else {
+                newSet.add(userId);
+            }
+            return newSet;
+        });
+    };
+
+    const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.checked) {
+            const allFilteredIds = new Set(filteredUsers.map(u => u.id));
+            setSelectedUserIds(allFilteredIds);
+        } else {
+            setSelectedUserIds(new Set());
+        }
+    };
+    
+    const handleBulkUpdate = async (action: 'extend' | 'subscribe', days?: number) => {
+        setBulkUpdateLoading(true);
+        const batch = writeBatch(db);
+        const usersToUpdate = users.filter(u => selectedUserIds.has(u.id));
+        const updatedUsersLocally: User[] = [];
+
+        for (const user of usersToUpdate) {
+            const userRef = doc(db, 'users', user.id);
+            let updatedData: Partial<User> = {};
+            let description = '';
+
+            if (action === 'extend' && days) {
+                const currentTrialEnd = user.trialEndsAt ? user.trialEndsAt.toDate() : new Date();
+                const newTrialEnd = new Date(currentTrialEnd.getTime());
+                newTrialEnd.setDate(newTrialEnd.getDate() + days);
+                const trialEndsAt = Timestamp.fromDate(newTrialEnd);
+                updatedData = { trialEndsAt };
+                description = `Admin '${currentUser.name}' estendeu o teste em ${days} dias para ${user.name}.`;
+            } else if (action === 'subscribe') {
+                updatedData = { isSubscribed: true };
+                description = `Admin '${currentUser.name}' marcou ${user.name} como assinante.`;
+            }
+
+            batch.update(userRef, updatedData);
+            updatedUsersLocally.push({ ...user, ...updatedData });
+            
+            const historyRef = doc(collection(db, 'action_history'));
+            batch.set(historyRef, {
+                timestamp: Timestamp.now(),
+                actionType: 'ADMIN_STATUS_CHANGE',
+                description,
+                adminId: currentUser.id,
+                adminName: currentUser.name,
+                userId: user.id,
+                userName: user.name,
+            });
+        }
+
+        try {
+            await batch.commit();
+            setUsers(prevUsers =>
+                prevUsers.map(u => updatedUsersLocally.find(upd => upd.id === u.id) || u)
+            );
+            alert(`${usersToUpdate.length} usuários atualizados com sucesso!`);
+        } catch (e) {
+            console.error("Bulk update error:", e);
+            alert("Ocorreu um erro ao atualizar os usuários.");
+        } finally {
+            setBulkUpdateLoading(false);
+            setSelectedUserIds(new Set());
+            setBulkAction(null);
+        }
+    };
+
 
     return (
         <div className="bg-rose-50 dark:bg-gray-900 min-h-screen text-brand-text dark:text-gray-200 font-sans">
             <div className="container mx-auto px-4 py-8">
                 <header className="flex justify-between items-center mb-8 flex-wrap gap-4">
                     <h1 className="font-display text-3xl font-bold text-brand-primary">Painel de Gerenciamento</h1>
-                    <div className="flex items-center gap-4">
-                        <span className="text-sm">Olá, {currentUser.name.split(' ')[0]}</span>
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm hidden sm:block">Olá, {currentUser.name.split(' ')[0]}</span>
+                        <button onClick={onGoToApp} className="flex items-center gap-2 p-2 rounded-lg text-sm font-medium transition-colors text-brand-light-text dark:text-gray-400 hover:bg-rose-100 dark:hover:bg-gray-700">
+                            <ArrowUturnLeftIcon className="w-5 h-5"/>
+                            <span className="hidden md:block">Ir para App</span>
+                        </button>
                         <button onClick={onLogout} className="flex items-center gap-2 p-2 rounded-lg text-sm font-medium transition-colors text-brand-light-text dark:text-gray-400 hover:bg-rose-100 dark:hover:bg-gray-700">
                             <ArrowRightOnRectangleIcon className="w-5 h-5"/>
-                            <span>Sair</span>
+                            <span className="hidden md:block">Sair</span>
                         </button>
                     </div>
                 </header>
@@ -295,6 +391,14 @@ export const AdminDashboard: React.FC<{ onLogout: () => void; currentUser: User;
                                 <table className="w-full text-left">
                                     <thead className="sticky top-0 bg-rose-50 dark:bg-gray-700/80 backdrop-blur-sm">
                                         <tr>
+                                            <th className="p-3 w-4">
+                                                <input
+                                                    type="checkbox"
+                                                    onChange={handleSelectAll}
+                                                    checked={filteredUsers.length > 0 && selectedUserIds.size === filteredUsers.length}
+                                                    className="h-4 w-4 rounded text-brand-primary focus:ring-brand-secondary border-gray-300 dark:border-gray-600"
+                                                />
+                                            </th>
                                             <th className="p-3 text-sm font-semibold text-brand-light-text dark:text-gray-400">Nome</th>
                                             <th className="p-3 text-sm font-semibold text-brand-light-text dark:text-gray-400 hidden md:table-cell">Email</th>
                                             <th className="p-3 text-sm font-semibold text-brand-light-text dark:text-gray-400 hidden lg:table-cell">Fim do Teste</th>
@@ -306,7 +410,15 @@ export const AdminDashboard: React.FC<{ onLogout: () => void; currentUser: User;
                                         {filteredUsers.map(user => {
                                             const status = getUserStatus(user);
                                             return (
-                                                <tr key={user.id} className="hover:bg-rose-50 dark:hover:bg-gray-700/50">
+                                                <tr key={user.id} className={`transition-colors ${selectedUserIds.has(user.id) ? 'bg-rose-100 dark:bg-gray-700' : 'hover:bg-rose-50 dark:hover:bg-gray-700/50'}`}>
+                                                    <td className="p-3">
+                                                         <input
+                                                            type="checkbox"
+                                                            checked={selectedUserIds.has(user.id)}
+                                                            onChange={() => handleSelectUser(user.id)}
+                                                            className="h-4 w-4 rounded text-brand-primary focus:ring-brand-secondary border-gray-300 dark:border-gray-600"
+                                                        />
+                                                    </td>
                                                     <td className="p-3 font-medium text-brand-text dark:text-gray-200">{user.name}</td>
                                                     <td className="p-3 text-brand-light-text dark:text-gray-400 hidden md:table-cell">{user.email}</td>
                                                     <td className="p-3 text-brand-light-text dark:text-gray-400 hidden lg:table-cell">
@@ -329,6 +441,15 @@ export const AdminDashboard: React.FC<{ onLogout: () => void; currentUser: User;
                                 </table>
                             </div>
                         )}
+                        {selectedUserIds.size > 0 && (
+                            <div className="bg-rose-100/80 dark:bg-gray-700/80 backdrop-blur-sm p-3 rounded-lg mt-4 flex items-center justify-between shadow-lg animate-fade-in-up">
+                                <span className="font-semibold text-brand-text dark:text-gray-200 text-sm">{selectedUserIds.size} usuários selecionados</span>
+                                <div className="flex gap-2">
+                                    <button onClick={() => setBulkAction('extend')} className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-3 rounded-md text-sm">Prorrogar Teste</button>
+                                    <button onClick={() => setBulkAction('subscribe')} className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-3 rounded-md text-sm">Marcar como Pagos</button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </main>
             </div>
@@ -338,6 +459,17 @@ export const AdminDashboard: React.FC<{ onLogout: () => void; currentUser: User;
                     user={editingUser}
                     onClose={() => setEditingUser(null)}
                     onSave={handleUpdateUser}
+                />
+            )}
+            
+            {bulkAction && (
+                <BulkActionModal
+                    isOpen={!!bulkAction}
+                    action={bulkAction}
+                    selectedCount={selectedUserIds.size}
+                    onClose={() => setBulkAction(null)}
+                    onConfirm={handleBulkUpdate}
+                    loading={bulkUpdateLoading}
                 />
             )}
         </div>

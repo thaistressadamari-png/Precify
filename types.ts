@@ -10,6 +10,7 @@ export interface User {
   hasGivenFeedback?: boolean;
   isSubscribed?: boolean;
   paymentConfirmationClicked?: boolean;
+  role?: 'admin' | 'user';
 }
 
 export interface ActionHistory {

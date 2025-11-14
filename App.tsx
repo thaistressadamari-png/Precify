@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import type { Ingredient, Packaging, Recipe, AppSettings, Page, Unit, User } from './types';
 import { IngredientManager } from './components/IngredientManager';
@@ -30,9 +31,9 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, getDoc, setDoc, addDoc, collection, updateDoc, Timestamp } from 'firebase/firestore';
 import { SubscriptionPage } from './components/SubscriptionPage';
 import { FeedbackModal } from './components/FeedbackModal';
-import { AdminChoicePage } from './components/AdminChoicePage';
 import { AdminDashboard } from './components/AdminDashboard';
 import { trackEvent } from './components/utils';
+import { AdjustmentsVerticalIcon } from './components/icons/AdjustmentsVerticalIcon';
 
 const useDarkMode = () => {
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
@@ -90,7 +91,7 @@ const App: React.FC = () => {
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
 
-  const [showAdminChoice, setShowAdminChoice] = useState(false);
+  const [isCurrentUserAdmin, setIsCurrentUserAdmin] = useState(false);
   const [isAdminMode, setIsAdminMode] = useState(false);
   
   useEffect(() => {
@@ -112,6 +113,8 @@ const App: React.FC = () => {
               // Track successful login
               trackEvent('login', { method: user.providerData[0]?.providerId || 'email' });
 
+              const isAdmin = userData.role === 'admin' || user.email?.toLowerCase() === 'jacques.cesar123@gmail.com';
+              
               const fullUser: User = {
                 id: user.uid,
                 email: user.email!,
@@ -121,15 +124,10 @@ const App: React.FC = () => {
                 hasGivenFeedback: userData.hasGivenFeedback,
                 isSubscribed: userData.isSubscribed,
                 paymentConfirmationClicked: userData.paymentConfirmationClicked,
+                role: userData.role
               };
               
-              if (user.email?.toLowerCase() === 'jacques.cesar123@gmail.com') {
-                  setActiveUser(fullUser);
-                  setShowAdminChoice(true);
-                  setAuthLoading(false);
-                  return; 
-              }
-
+              setIsCurrentUserAdmin(isAdmin);
               setActiveUser(fullUser);
 
               // Subscription logic
@@ -137,7 +135,7 @@ const App: React.FC = () => {
               const isSubscribed = fullUser.isSubscribed;
               const hasGivenFeedback = fullUser.hasGivenFeedback;
 
-              if (trialExpired && !isSubscribed) {
+              if (trialExpired && !isSubscribed && !isAdmin) {
                 setShowSubscriptionFlow(true);
                 if (!hasGivenFeedback) {
                     setShowFeedbackModal(true);
@@ -160,6 +158,7 @@ const App: React.FC = () => {
                   trialEndsAt: trialTimestamp,
                   hasGivenFeedback: false,
                   isSubscribed: false,
+                  role: 'user',
                 };
                 await setDoc(userDocRef, newUserDoc);
 
@@ -170,6 +169,7 @@ const App: React.FC = () => {
                   trialEndsAt: trialTimestamp,
                   hasGivenFeedback: false,
                   isSubscribed: false,
+                  role: 'user',
                 };
                 setActiveUser(fullUser);
             }
@@ -184,8 +184,8 @@ const App: React.FC = () => {
         setView('landing');
         setShowSubscriptionFlow(false);
         setShowFeedbackModal(false);
-        setShowAdminChoice(false);
         setIsAdminMode(false);
+        setIsCurrentUserAdmin(false);
       }
       setAuthLoading(false);
     });
@@ -651,19 +651,9 @@ const App: React.FC = () => {
       onNavigateToRegister={() => setView('register')}
     />;
   }
-  
-  if (showAdminChoice) {
-    return <AdminChoicePage 
-      onGoToApp={() => setShowAdminChoice(false)} 
-      onGoToAdmin={() => {
-        setShowAdminChoice(false);
-        setIsAdminMode(true);
-      }}
-    />;
-  }
 
   if (isAdminMode) {
-    return <AdminDashboard onLogout={handleLogout} currentUser={activeUser} />;
+    return <AdminDashboard onLogout={handleLogout} currentUser={activeUser} onGoToApp={() => setIsAdminMode(false)} />;
   }
 
   if (showSubscriptionFlow) {
@@ -718,6 +708,16 @@ const App: React.FC = () => {
                 <NavItem label="Receitas" targetPage="recipes" icon={BookOpenIcon}/>
                 <NavItem label="Recheios" targetPage="fillings" icon={FireIcon}/>
                 <NavItem label="Ajustes" targetPage="settings" icon={AdjustmentsHorizontalIcon}/>
+
+                {isCurrentUserAdmin && (
+                  <button 
+                    onClick={() => setIsAdminMode(true)}
+                    className="flex flex-col items-center justify-center p-2 rounded-lg text-sm font-medium transition-colors w-full text-left lg:flex-row lg:justify-start lg:gap-3 lg:px-3 lg:py-2 text-brand-light-text dark:text-gray-400 hover:bg-rose-100 dark:hover:bg-gray-700"
+                  >
+                    <AdjustmentsVerticalIcon className="w-6 h-6"/>
+                    <span className="mt-1 text-xs lg:mt-0 lg:text-base hidden md:block">Painel Admin</span>
+                  </button>
+                )}
 
                  <div className="border-t border-rose-100 dark:border-gray-700 my-2 hidden lg:block"></div>
 
