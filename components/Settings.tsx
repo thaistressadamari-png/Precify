@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { AppSettings, User } from '../types';
 import { auth } from './firebase';
-import { updateProfile, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential, updateEmail } from 'firebase/auth';
+import { updateProfile, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential, verifyBeforeUpdateEmail } from 'firebase/auth';
 import { safeParseFloat } from './utils';
 
 interface SettingsProps {
@@ -11,7 +11,7 @@ interface SettingsProps {
   onUserUpdate: (updatedData: Partial<User>) => Promise<void>;
 }
 
-const inputFieldClasses = "mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 dark:text-gray-200 border border-rose-200 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-secondary focus:border-brand-secondary";
+const inputFieldClasses = "mt-1 block w-full px-3 py-2 bg-white dark:bg-gray-700 dark:text-gray-200 border border-rose-200 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-brand-secondary focus:border-brand-secondary disabled:bg-gray-100 dark:disabled:bg-gray-600 disabled:cursor-not-allowed";
 const buttonClasses = "bg-brand-primary hover:bg-rose-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105 disabled:bg-rose-300 disabled:cursor-not-allowed";
 
 interface PasswordPromptModalProps {
@@ -70,6 +70,10 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onUpdateSettings, 
   const [emailLoading, setEmailLoading] = useState(false);
   const [passwordLoading, setPasswordLoading] = useState(false);
 
+  const isEmailPasswordUser = auth.currentUser?.providerData.some(
+    (provider) => provider.providerId === 'password'
+  );
+
   useEffect(() => {
     setName(user.name);
   }, [user.name]);
@@ -95,7 +99,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onUpdateSettings, 
   };
 
   const handlePasswordReset = async () => {
-    if (!user.email) return;
+    if (!user.email || !isEmailPasswordUser) return;
     setPasswordLoading(true);
     try {
       await sendPasswordResetEmail(auth, user.email);
@@ -110,15 +114,16 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onUpdateSettings, 
 
   const handleInitiateEmailChange = (e: React.FormEvent) => {
     e.preventDefault();
-    if (newEmail && newEmail !== user.email) {
+    if (!isEmailPasswordUser) return;
+    if (newEmail && newEmail.includes('@') && newEmail !== user.email) {
       setShowPasswordPrompt(true);
     } else {
-      alert("Por favor, insira um e-mail diferente do atual.");
+      alert("Por favor, insira um e-mail válido e diferente do atual.");
     }
   };
 
   const handleConfirmEmailChange = async (password: string) => {
-    if (!auth.currentUser || !password || !newEmail) {
+    if (!auth.currentUser || !password || !newEmail || !isEmailPasswordUser) {
       alert("Senha ou e-mail inválido.");
       return;
     }
@@ -127,22 +132,24 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onUpdateSettings, 
       const credential = EmailAuthProvider.credential(auth.currentUser.email!, password);
       await reauthenticateWithCredential(auth.currentUser, credential);
       
-      await updateEmail(auth.currentUser, newEmail);
-      await onUserUpdate({ email: newEmail });
-
-      alert("E-mail atualizado com sucesso! Um e-mail de verificação foi enviado para o novo endereço.");
+      await verifyBeforeUpdateEmail(auth.currentUser, newEmail);
+      
+      alert("E-mail de verificação enviado para " + newEmail + ". Verifique sua caixa de SPAM para acessar o link e confirmar a alteração.");
       setShowPasswordPrompt(false);
       setNewEmail('');
+
     } catch (error: any) {
       setShowPasswordPrompt(false);
-      if (error.code === 'auth/wrong-password') {
-        alert("Senha incorreta. Tente novamente.");
+      if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
+        alert("Senha incorreta. Por favor, tente novamente.");
       } else if (error.code === 'auth/email-already-in-use') {
         alert("Este e-mail já está em uso por outra conta.");
+      } else if (error.code === 'auth/requires-recent-login') {
+        alert("Sua sessão expirou por segurança. Por favor, faça o login novamente para alterar o e-mail.");
       } else {
-        alert("Ocorreu um erro ao atualizar o e-mail.");
+        alert("Ocorreu um erro ao tentar alterar o e-mail.");
+        console.error("Email update error:", error);
       }
-      console.error(error);
     } finally {
       setEmailLoading(false);
     }
@@ -166,26 +173,32 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onUpdateSettings, 
               {nameLoading ? 'Salvando...' : 'Salvar Nome'}
             </button>
           </div>
+          
+          {isEmailPasswordUser && (
+            <>
+              {/* Email Change */}
+              <form onSubmit={handleInitiateEmailChange} className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                <div className="md:col-span-2">
+                  <label htmlFor="userEmail" className="block text-sm font-medium text-brand-light-text dark:text-gray-400">E-mail</label>
+                  <input type="email" id="userEmail" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} className={inputFieldClasses} placeholder={user.email} />
+                </div>
+                <button type="submit" disabled={emailLoading || !newEmail || newEmail === user.email} className={buttonClasses}>
+                  {emailLoading ? 'Alterando...' : 'Alterar E-mail'}
+                </button>
+              </form>
 
-          {/* Email Change */}
-          <form onSubmit={handleInitiateEmailChange} className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-            <div className="md:col-span-2">
-              <label htmlFor="userEmail" className="block text-sm font-medium text-brand-light-text dark:text-gray-400">E-mail</label>
-              <input type="email" id="userEmail" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} className={inputFieldClasses} placeholder={user.email} />
-            </div>
-            <button type="submit" disabled={emailLoading || !newEmail || newEmail === user.email} className={buttonClasses}>
-              {emailLoading ? 'Alterando...' : 'Alterar E-mail'}
-            </button>
-          </form>
-
-          {/* Password Change */}
-          <div>
-            <label className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Senha</label>
-            <button onClick={handlePasswordReset} disabled={passwordLoading} className={`${buttonClasses} mt-1 w-full md:w-auto`}>
-              {passwordLoading ? 'Enviando e-mail...' : 'Alterar Senha'}
-            </button>
-            <p className="text-xs text-brand-light-text dark:text-gray-500 mt-1">Um link para redefinição será enviado para seu e-mail.</p>
-          </div>
+              {/* Password Change */}
+              <div>
+                <label className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Senha</label>
+                <button onClick={handlePasswordReset} disabled={passwordLoading} className={`${buttonClasses} mt-1 w-full md:w-auto`}>
+                  {passwordLoading ? 'Enviando e-mail...' : 'Alterar Senha'}
+                </button>
+                <p className="text-xs text-brand-light-text dark:text-gray-500 mt-1">
+                  Um link para redefinição será enviado para seu e-mail.
+                </p>
+              </div>
+            </>
+          )}
 
         </div>
       </div>

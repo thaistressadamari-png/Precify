@@ -102,6 +102,13 @@ const App: React.FC = () => {
             if (userDocSnap.exists()) {
               const userData = userDocSnap.data();
 
+              // Sync email from Auth to Firestore if they differ.
+              // This handles cases where the user verified a new email address outside the app session.
+              if (user.email && userData.email !== user.email) {
+                  await updateDoc(userDocRef, { email: user.email });
+                  userData.email = user.email; // Update local data for this session
+              }
+
               // Track successful login
               trackEvent('login', { method: user.providerData[0]?.providerId || 'email' });
 
