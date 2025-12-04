@@ -11,6 +11,7 @@ import { formatCurrency } from './utils';
 import { ConfirmModal } from './ConfirmModal';
 import { ArrowDownTrayIcon } from './icons/ArrowDownTrayIcon';
 import { ArrowUpTrayIcon } from './icons/ArrowUpTrayIcon';
+import { DocumentDuplicateIcon } from './icons/DocumentDuplicateIcon';
 
 interface RecipesProps {
   recipes: Recipe[];
@@ -23,9 +24,10 @@ interface RecipesProps {
   settings: AppSettings;
   onImport: (newRecipes: Recipe[]) => void;
   type: 'recipe' | 'filling';
+  onDuplicate: (recipe: Recipe) => void;
 }
 
-export const Recipes: React.FC<RecipesProps> = ({ recipes, onAddNew, onEdit, onDelete, onViewDetails, ingredients, packagingItems, settings, onImport, type }) => {
+export const Recipes: React.FC<RecipesProps> = ({ recipes, onAddNew, onEdit, onDelete, onViewDetails, ingredients, packagingItems, settings, onImport, type, onDuplicate }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [recipeToDelete, setRecipeToDelete] = useState<Recipe | null>(null);
     const [dataToImport, setDataToImport] = useState<Recipe[] | null>(null);
@@ -208,15 +210,18 @@ export const Recipes: React.FC<RecipesProps> = ({ recipes, onAddNew, onEdit, onD
                                     </div>
                                 )}
                             </div>
-                            <div className="bg-rose-100 dark:bg-gray-700 p-2 grid grid-cols-3 gap-1">
-                                <button onClick={() => onViewDetails(recipe)} className="text-sm py-2 px-2 text-center rounded-md text-brand-text dark:text-gray-200 hover:bg-white dark:hover:bg-gray-600 transition-colors">Ver Detalhes</button>
-                                <button onClick={() => onEdit(recipe)} className="text-blue-600 dark:text-blue-400 p-2 rounded-md hover:bg-blue-100 dark:hover:bg-gray-600 transition-colors flex items-center justify-center gap-1">
-                                    <PencilIcon className="w-4 h-4" />
-                                    <span className="text-sm">Editar</span>
+                            <div className="bg-rose-100 dark:bg-gray-700 p-2 grid grid-cols-4 gap-1">
+                                <button onClick={() => onViewDetails(recipe)} className="text-sm py-2 px-2 text-center rounded-md text-brand-text dark:text-gray-200 hover:bg-white dark:hover:bg-gray-600 transition-colors col-span-1">Ver</button>
+                                <button onClick={() => onDuplicate(recipe)} title="Duplicar" className="text-emerald-600 dark:text-emerald-400 p-2 rounded-md hover:bg-emerald-100 dark:hover:bg-gray-600 transition-colors flex items-center justify-center gap-1 col-span-1">
+                                    <DocumentDuplicateIcon className="w-4 h-4" />
                                 </button>
-                                <button onClick={() => setRecipeToDelete(recipe)} className="text-rose-500 dark:text-rose-400 p-2 rounded-md hover:bg-rose-200 dark:hover:bg-gray-600 transition-colors flex items-center justify-center gap-1">
+                                <button onClick={() => onEdit(recipe)} className="text-blue-600 dark:text-blue-400 p-2 rounded-md hover:bg-blue-100 dark:hover:bg-gray-600 transition-colors flex items-center justify-center gap-1 col-span-1">
+                                    <PencilIcon className="w-4 h-4" />
+                                    <span className="text-sm hidden sm:inline">Editar</span>
+                                </button>
+                                <button onClick={() => setRecipeToDelete(recipe)} className="text-rose-500 dark:text-rose-400 p-2 rounded-md hover:bg-rose-200 dark:hover:bg-gray-600 transition-colors flex items-center justify-center gap-1 col-span-1">
                                     <TrashIcon className="w-4 h-4"/>
-                                    <span className="text-sm">Excluir</span>
+                                    <span className="text-sm hidden sm:inline">Excluir</span>
                                 </button>
                             </div>
                         </div>

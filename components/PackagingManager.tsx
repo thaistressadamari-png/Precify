@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef } from 'react';
 import type { Packaging } from '../types';
 import { PlusIcon } from './icons/PlusIcon';
@@ -8,6 +9,7 @@ import { ConfirmModal } from './ConfirmModal';
 import { formatCurrency } from './utils';
 import { ArrowDownTrayIcon } from './icons/ArrowDownTrayIcon';
 import { ArrowUpTrayIcon } from './icons/ArrowUpTrayIcon';
+import { DocumentDuplicateIcon } from './icons/DocumentDuplicateIcon';
 
 interface PackagingManagerProps {
   packaging: Packaging[];
@@ -15,9 +17,10 @@ interface PackagingManagerProps {
   onEdit: (pkg: Packaging) => void;
   onDelete: (packagingId: string) => void;
   onImport: (newPackaging: Packaging[]) => void;
+  onDuplicate: (pkg: Packaging) => void;
 }
 
-export const PackagingManager: React.FC<PackagingManagerProps> = ({ packaging, onAddNew, onEdit, onDelete, onImport }) => {
+export const PackagingManager: React.FC<PackagingManagerProps> = ({ packaging, onAddNew, onEdit, onDelete, onImport, onDuplicate }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [packagingIdToDelete, setPackagingIdToDelete] = useState<string | null>(null);
   const [dataToImport, setDataToImport] = useState<Packaging[] | null>(null);
@@ -147,6 +150,9 @@ export const PackagingManager: React.FC<PackagingManagerProps> = ({ packaging, o
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
+                    <button onClick={() => onDuplicate(pkg)} title="Duplicar" className="text-emerald-500 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 p-1 rounded-full hover:bg-emerald-100 dark:hover:bg-gray-600 transition-colors">
+                      <DocumentDuplicateIcon className="w-5 h-5" />
+                    </button>
                     <button onClick={() => onEdit(pkg)} className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 p-1 rounded-full hover:bg-blue-100 dark:hover:bg-gray-600 transition-colors">
                       <PencilIcon className="w-5 h-5" />
                     </button>

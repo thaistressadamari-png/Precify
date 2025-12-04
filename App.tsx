@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import type { Ingredient, Packaging, Recipe, AppSettings, Page, Unit, User } from './types';
 import { IngredientManager } from './components/IngredientManager';
@@ -348,6 +347,14 @@ const App: React.FC = () => {
   const handleViewRecipeDetails = (recipe: Recipe) => { setRecipeToView(recipe); setPage('recipe-details'); }
   const handleAddNewRecipe = () => { setRecipeToEdit(null); setPage('recipe-pricer'); };
   const handleCancelRecipePricer = () => { setRecipeToEdit(null); setPage('recipes'); }
+  const handleDuplicateRecipe = (recipe: Recipe) => {
+    const newRecipe = {
+      ...JSON.parse(JSON.stringify(recipe)),
+      id: new Date().toISOString() + Math.random(),
+      name: `${recipe.name} (Cópia)`
+    };
+    handleSaveRecipe(newRecipe);
+  };
 
   // --- FILLING HANDLERS ---
   const handleSaveFilling = (filling: Recipe) => {
@@ -366,6 +373,14 @@ const App: React.FC = () => {
   const handleViewFillingDetails = (filling: Recipe) => { setFillingToView(filling); setPage('filling-details'); };
   const handleAddNewFilling = () => { setFillingToEdit(null); setPage('filling-pricer'); };
   const handleCancelFillingPricer = () => { setFillingToEdit(null); setPage('fillings'); };
+  const handleDuplicateFilling = (filling: Recipe) => {
+    const newFilling = {
+      ...JSON.parse(JSON.stringify(filling)),
+      id: new Date().toISOString() + Math.random(),
+      name: `${filling.name} (Cópia)`
+    };
+    handleSaveFilling(newFilling);
+  };
 
 
   // --- INGREDIENT HANDLERS ---
@@ -423,6 +438,14 @@ const App: React.FC = () => {
       return newIngredients;
     });
   };
+  const handleDuplicateIngredient = (ingredient: Ingredient) => {
+    const newIngredient = {
+        ...JSON.parse(JSON.stringify(ingredient)),
+        id: new Date().toISOString() + Math.random(),
+        name: `${ingredient.name} (Cópia)`
+    };
+    handleSaveIngredient(newIngredient);
+  };
 
   // --- PACKAGING HANDLERS ---
   const handleAddNewPackaging = () => { setPackagingToEdit(null); setPage('packaging-form'); };
@@ -437,6 +460,14 @@ const App: React.FC = () => {
   };
   const handleCancelPackagingForm = () => { setPackagingToEdit(null); setPage('packaging'); };
   const handleDeletePackaging = (packagingId: string) => { setPackaging(prev => prev.filter(p => p.id !== packagingId)); };
+  const handleDuplicatePackaging = (pkg: Packaging) => {
+    const newPackaging = {
+      ...JSON.parse(JSON.stringify(pkg)),
+      id: new Date().toISOString() + Math.random(),
+      name: `${pkg.name} (Cópia)`
+    };
+    handleSavePackaging(newPackaging);
+  };
 
   // --- AUTH & SUBSCRIPTION HANDLERS ---
   const handleLogout = () => {
@@ -536,24 +567,28 @@ const App: React.FC = () => {
           onAddNew={handleAddNewIngredient} onEdit={handleEditIngredient} onDelete={handleDeleteIngredient}
           onViewDetails={handleViewIngredientDetails} onImport={handleImportIngredients} highlightedId={highlightedIngredientId}
           onHighlightComplete={() => setHighlightedIngredientId(null)}
+          onDuplicate={handleDuplicateIngredient}
         />;
       case 'packaging':
         return <PackagingManager
           packaging={packaging}
           onAddNew={handleAddNewPackaging} onEdit={handleEditPackaging} onDelete={handleDeletePackaging}
           onImport={handleImportPackaging}
+          onDuplicate={handleDuplicatePackaging}
         />;
       case 'recipes':
         return <Recipes 
             recipes={recipes} type="recipe" onAddNew={handleAddNewRecipe} onEdit={handleEditRecipe} 
             onDelete={handleDeleteRecipe} onViewDetails={handleViewRecipeDetails}
             ingredients={ingredientsWithFillings} packagingItems={packaging} settings={settings} onImport={handleImportRecipes}
+            onDuplicate={handleDuplicateRecipe}
         />;
       case 'fillings':
         return <Recipes 
             recipes={fillings} type="filling" onAddNew={handleAddNewFilling} onEdit={handleEditFilling} 
             onDelete={handleDeleteFilling} onViewDetails={handleViewFillingDetails}
             ingredients={ingredients} packagingItems={packaging} settings={settings} onImport={handleImportFillings}
+            onDuplicate={handleDuplicateFilling}
         />;
       case 'settings':
         return <Settings 

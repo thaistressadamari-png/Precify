@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import type { Ingredient } from '../types';
 import { PlusIcon } from './icons/PlusIcon';
@@ -9,6 +10,7 @@ import { ConfirmModal } from './ConfirmModal';
 import { formatCurrency } from './utils';
 import { ArrowDownTrayIcon } from './icons/ArrowDownTrayIcon';
 import { ArrowUpTrayIcon } from './icons/ArrowUpTrayIcon';
+import { DocumentDuplicateIcon } from './icons/DocumentDuplicateIcon';
 
 interface IngredientManagerProps {
   ingredients: Ingredient[];
@@ -19,9 +21,10 @@ interface IngredientManagerProps {
   onImport: (newIngredients: Ingredient[]) => void;
   highlightedId: string | null;
   onHighlightComplete: () => void;
+  onDuplicate: (ingredient: Ingredient) => void;
 }
 
-export const IngredientManager: React.FC<IngredientManagerProps> = ({ ingredients, onAddNew, onEdit, onDelete, onViewDetails, onImport, highlightedId, onHighlightComplete }) => {
+export const IngredientManager: React.FC<IngredientManagerProps> = ({ ingredients, onAddNew, onEdit, onDelete, onViewDetails, onImport, highlightedId, onHighlightComplete, onDuplicate }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [ingredientIdToDelete, setIngredientIdToDelete] = useState<string | null>(null);
   const [dataToImport, setDataToImport] = useState<Ingredient[] | null>(null);
@@ -176,6 +179,9 @@ export const IngredientManager: React.FC<IngredientManagerProps> = ({ ingredient
                       <div className="flex items-center gap-2">
                         <button onClick={() => onViewDetails(ing)} aria-label="Ver detalhes" className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">
                           <InformationCircleIcon className="w-5 h-5" />
+                        </button>
+                        <button onClick={() => onDuplicate(ing)} aria-label="Duplicar ingrediente" title="Duplicar" className="text-emerald-500 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 p-1 rounded-full hover:bg-emerald-100 dark:hover:bg-gray-600 transition-colors">
+                          <DocumentDuplicateIcon className="w-5 h-5" />
                         </button>
                         <button onClick={() => onEdit(ing)} aria-label="Editar ingrediente" className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 p-1 rounded-full hover:bg-blue-100 dark:hover:bg-gray-600 transition-colors">
                           <PencilIcon className="w-5 h-5" />
