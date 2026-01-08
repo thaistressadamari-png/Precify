@@ -6,6 +6,7 @@ import { ConfirmModal } from './ConfirmModal';
 import { calculateCosts, convertToBaseUnitAmount } from './costCalculator';
 import { formatCurrency, safeParseFloat } from './utils';
 import { InformationCircleIcon } from './icons/InformationCircleIcon';
+import { ExclamationTriangleIcon } from './icons/ExclamationTriangleIcon';
 
 interface RecipePricerProps {
   ingredients: Ingredient[];
@@ -181,6 +182,14 @@ const TimeInput: React.FC<{
 export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagingItems, settings, onSave, onCancel, recipeToEdit, type }) => {
   const [recipe, setRecipe] = useState<Omit<Recipe, 'id'>>(createEmptyRecipe());
   const [itemToDelete, setItemToDelete] = useState<ItemToDelete | null>(null);
+  
+  // Scaling states
+  const [showScalingInput, setShowScalingInput] = useState(false);
+  const [scalingPercentage, setScalingPercentage] = useState('');
+  const [showPackagingWarning, setShowPackagingWarning] = useState(false);
+  
+  // Individual adjustment state
+  const [individualAdjustment, setIndividualAdjustment] = useState<{sectionId: string, ingId: string, percent: string} | null>(null);
 
   useEffect(() => {
     const initialData = recipeToEdit 
@@ -275,6 +284,73 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
       return;
     }
     setItemToDelete({ type: 'section', id: section.id, name: section.name });
+  };
+
+  // Scaling Logic
+  const applyGlobalScale = (factor: number) => {
+    setRecipe(prev => ({
+      ...prev,
+      ingredientSections: prev.ingredientSections.map(section => ({
+        ...section,
+        ingredients: section.ingredients.map(ing => ({
+          ...ing,
+          amount: parseFloat((ing.amount * factor).toFixed(4))
+        }))
+      })),
+      yieldAmount: parseFloat((prev.yieldAmount * factor).toFixed(4)),
+      laborMinutes: Math.round(prev.laborMinutes * factor),
+      energyUsageMinutes: Math.round(prev.energyUsageMinutes * factor),
+      gasUsageMinutes: Math.round(prev.gasUsageMinutes * factor),
+      packaging: [] // Clear packaging on scale change
+    }));
+    setShowPackagingWarning(true);
+  };
+
+  const handlePercentageScale = (e: React.FormEvent) => {
+    e.preventDefault();
+    const percent = safeParseFloat(scalingPercentage);
+    if (percent === 0) return;
+    const factor = 1 + (percent / 100);
+    applyGlobalScale(factor);
+    setScalingPercentage('');
+    setShowScalingInput(false);
+  };
+
+  const applyIndividualAdjustment = (applyToAll: boolean) => {
+    if (!individualAdjustment) return;
+    const percent = safeParseFloat(individualAdjustment.percent);
+    const factor = 1 + (percent / 100);
+
+    setRecipe(prev => {
+      const updatedSections = prev.ingredientSections.map(section => ({
+        ...section,
+        ingredients: section.ingredients.map(ing => {
+          const isTarget = section.id === individualAdjustment.sectionId && ing.id === individualAdjustment.ingId;
+          if (isTarget || applyToAll) {
+            return { ...ing, amount: parseFloat((ing.amount * factor).toFixed(4)) };
+          }
+          return ing;
+        })
+      }));
+
+      // If applying to all, also scale yields and labor, and reset packaging
+      if (applyToAll) {
+        setShowPackagingWarning(true);
+        return {
+          ...prev,
+          ingredientSections: updatedSections,
+          yieldAmount: parseFloat((prev.yieldAmount * factor).toFixed(4)),
+          laborMinutes: Math.round(prev.laborMinutes * factor),
+          energyUsageMinutes: Math.round(prev.energyUsageMinutes * factor),
+          gasUsageMinutes: Math.round(prev.gasUsageMinutes * factor),
+          packaging: []
+        };
+      }
+
+      return { ...prev, ingredientSections: updatedSections };
+    });
+
+    setIndividualAdjustment(null);
   };
 
   // Ingredient handlers
@@ -550,10 +626,10 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
                             </button>
                         </div>
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-4">
                         {section.ingredients.map(ing => (
-                            <div key={ing.id} className="grid grid-cols-1 md:grid-cols-4 gap-2 items-end">
-                                <div className="md:col-span-2">
+                            <div key={ing.id} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-end">
+                                <div className="md:col-span-5">
                                     <label className="text-xs text-brand-light-text dark:text-gray-400">Ingrediente</label>
                                     <SearchableIngredientSelect
                                         ingredients={ingredients}
@@ -561,17 +637,24 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
                                         onSelect={(id) => updateIngredient(section.id, ing.id, 'ingredientId', id)}
                                     />
                                 </div>
-                                <div className="flex-grow">
+                                <div className="md:col-span-2">
                                     <label className="text-xs text-brand-light-text dark:text-gray-400">Qtd.</label>
                                     <input type="number" value={ing.amount || ''} onChange={(e) => updateIngredient(section.id, ing.id, 'amount', safeParseFloat(e.target.value))} className={inputFieldClasses} min="0" step="any" />
                                 </div>
-                                <div className="flex items-end gap-2">
-                                    <div className="flex-grow">
-                                        <label className="text-xs text-brand-light-text dark:text-gray-400">Unid.</label>
-                                        <select value={ing.unit} onChange={(e) => updateIngredient(section.id, ing.id, 'unit', e.target.value as Unit)} className={selectFieldClasses}>
-                                            <option value="g">g</option><option value="kg">kg</option><option value="ml">ml</option><option value="l">l</option><option value="un">un</option>
-                                        </select>
-                                    </div>
+                                <div className="md:col-span-2">
+                                    <label className="text-xs text-brand-light-text dark:text-gray-400">Unid.</label>
+                                    <select value={ing.unit} onChange={(e) => updateIngredient(section.id, ing.id, 'unit', e.target.value as Unit)} className={selectFieldClasses}>
+                                        <option value="g">g</option><option value="kg">kg</option><option value="ml">ml</option><option value="l">l</option><option value="un">un</option>
+                                    </select>
+                                </div>
+                                <div className="md:col-span-3 flex items-center justify-end gap-1">
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setIndividualAdjustment({ sectionId: section.id, ingId: ing.id, percent: '' })}
+                                        className="text-xs bg-rose-50 dark:bg-gray-700 text-brand-primary dark:text-brand-secondary border border-rose-200 dark:border-gray-600 px-2 py-2 rounded-md hover:bg-rose-100 transition-colors font-bold"
+                                    >
+                                        % Ajustar
+                                    </button>
                                     <button type="button" onClick={() => triggerRemoveIngredient(section.id, ing)} className="text-rose-400 hover:text-brand-primary p-2 rounded-full hover:bg-rose-100 dark:hover:bg-gray-600"><TrashIcon className="w-5 h-5" /></button>
                                 </div>
                             </div>
@@ -583,6 +666,59 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
               <button type="button" onClick={addSection} className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-rose-300 dark:border-gray-600 text-brand-light-text dark:text-gray-400 hover:bg-rose-50 dark:hover:bg-gray-700/50 hover:border-brand-secondary hover:text-brand-primary dark:hover:text-rose-200 font-bold py-3 px-4 rounded-lg transition-colors">
                   <PlusIcon className="w-5 h-5"/> <span>Adicionar Seção (Ex: Recheio, Cobertura)</span>
               </button>
+            </div>
+
+            {/* Global Scaling Panel */}
+            <div className="bg-brand-primary/5 dark:bg-rose-900/10 p-6 rounded-2xl shadow-md border-2 border-dashed border-brand-primary/30 mb-8 animate-fade-in">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div>
+                    <h2 className="font-display text-xl text-brand-text dark:text-rose-100">Escalonar Receita Inteira</h2>
+                    <p className="text-xs text-brand-light-text dark:text-gray-400">Multiplica todos os ingredientes e tempos de produção.</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button type="button" onClick={() => applyGlobalScale(0.5)} className="px-3 py-2 bg-white dark:bg-gray-800 border border-rose-200 dark:border-gray-600 rounded-lg text-sm font-bold hover:bg-rose-50 transition-colors">½x</button>
+                    <button type="button" onClick={() => applyGlobalScale(1.0)} className="px-3 py-2 bg-white dark:bg-gray-800 border border-rose-200 dark:border-gray-600 rounded-lg text-sm font-bold hover:bg-rose-50 transition-colors">1x</button>
+                    <button type="button" onClick={() => applyGlobalScale(1.5)} className="px-3 py-2 bg-white dark:bg-gray-800 border border-rose-200 dark:border-gray-600 rounded-lg text-sm font-bold hover:bg-rose-50 transition-colors">1.5x</button>
+                    <button type="button" onClick={() => applyGlobalScale(2.0)} className="px-3 py-2 bg-white dark:bg-gray-800 border border-rose-200 dark:border-gray-600 rounded-lg text-sm font-bold hover:bg-rose-50 transition-colors">2x</button>
+                    <button type="button" onClick={() => applyGlobalScale(3.0)} className="px-3 py-2 bg-white dark:bg-gray-800 border border-rose-200 dark:border-gray-600 rounded-lg text-sm font-bold hover:bg-rose-50 transition-colors">3x</button>
+                    
+                    <button 
+                      type="button" 
+                      onClick={() => setShowScalingInput(!showScalingInput)}
+                      className="px-3 py-2 bg-brand-primary text-white rounded-lg text-sm font-bold shadow-sm hover:bg-rose-700 transition-colors"
+                    >
+                      Porcentagem %
+                    </button>
+                  </div>
+                </div>
+
+                {showScalingInput && (
+                  <div className="mt-4 flex items-center gap-2 animate-fade-in-up">
+                    <input 
+                      type="number" 
+                      inputMode="decimal"
+                      value={scalingPercentage}
+                      onChange={(e) => setScalingPercentage(e.target.value)}
+                      placeholder="Ex: 20 para +20% ou -10 para -10%"
+                      className={`${inputFieldClasses} max-w-xs`}
+                    />
+                    <button 
+                      type="button" 
+                      onClick={handlePercentageScale}
+                      className="bg-brand-secondary text-white px-4 py-2 rounded-lg font-bold hover:bg-pink-500"
+                    >
+                      Aplicar
+                    </button>
+                  </div>
+                )}
+
+                {showPackagingWarning && (
+                  <div className="mt-4 flex items-center gap-3 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-900/50 rounded-lg text-yellow-800 dark:text-yellow-200 text-sm animate-fade-in">
+                    <ExclamationTriangleIcon className="w-5 h-5 flex-shrink-0" />
+                    <p>Escala alterada! Revise as embalagens para este novo volume.</p>
+                    <button type="button" onClick={() => setShowPackagingWarning(false)} className="ml-auto font-bold underline">Ok</button>
+                  </div>
+                )}
             </div>
 
             <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700 mb-8 relative z-30">
@@ -780,6 +916,50 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
 
         </form>
     </div>
+
+    {/* Adjustment Modal for Individual Ingredients */}
+    {individualAdjustment && (
+      <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-[100] animate-fade-in">
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-xl border border-rose-100 dark:border-gray-700 w-full max-w-sm text-center">
+          <h3 className="font-display text-2xl text-brand-text dark:text-rose-100 mb-2">Ajustar Quantidade</h3>
+          <p className="text-sm text-brand-light-text dark:text-gray-400 mb-4">
+            Ajustar {ingredients.find(i => i.id === recipe.ingredientSections.find(s => s.id === individualAdjustment.sectionId)?.ingredients.find(ing => ing.id === individualAdjustment.ingId)?.ingredientId)?.name}
+          </p>
+          
+          <input 
+            type="number" 
+            inputMode="decimal"
+            autoFocus
+            value={individualAdjustment.percent}
+            onChange={(e) => setIndividualAdjustment({ ...individualAdjustment, percent: e.target.value })}
+            placeholder="Ex: 50 para +50%"
+            className={inputFieldClasses}
+          />
+
+          <div className="mt-6 flex flex-col gap-2">
+            <button 
+              onClick={() => applyIndividualAdjustment(true)}
+              className="bg-brand-primary text-white py-3 rounded-lg font-bold hover:bg-rose-700 shadow-md"
+            >
+              Aplicar a TODA a receita
+            </button>
+            <button 
+              onClick={() => applyIndividualAdjustment(false)}
+              className="bg-brand-secondary text-white py-3 rounded-lg font-bold hover:bg-pink-500 shadow-md"
+            >
+              Ajustar APENAS este item
+            </button>
+            <button 
+              onClick={() => setIndividualAdjustment(null)}
+              className="mt-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 font-medium"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
     <ConfirmModal
         isOpen={!!itemToDelete}
         title="Confirmar Exclusão"
