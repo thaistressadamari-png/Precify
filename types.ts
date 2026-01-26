@@ -1,3 +1,4 @@
+
 export type Unit = 'g' | 'kg' | 'ml' | 'l' | 'un';
 export type PackagingUnit = 'un' | 'pacote' | 'rolo' | 'm';
 
@@ -13,10 +14,35 @@ export interface User {
   role?: 'admin' | 'user';
 }
 
+export interface SupportMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderRole: 'admin' | 'user';
+  text: string;
+  timestamp: any; // Firestore Timestamp
+}
+
+export type TicketStatus = 'open' | 'in_progress' | 'closed';
+export type TicketCategory = 'bug' | 'improvement' | 'question' | 'other';
+
+export interface SupportTicket {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  subject: string;
+  category: TicketCategory;
+  status: TicketStatus;
+  createdAt: any; // Firestore Timestamp
+  updatedAt: any; // Firestore Timestamp
+  messages: SupportMessage[];
+}
+
 export interface ActionHistory {
   id: string;
   timestamp: any; // Firestore Timestamp
-  actionType: 'ADMIN_STATUS_CHANGE' | 'USER_CONFIRMED_PAYMENT';
+  actionType: 'ADMIN_STATUS_CHANGE' | 'USER_CONFIRMED_PAYMENT' | 'TICKET_RESPONSE';
   description: string;
   adminId?: string;
   adminName?: string;
@@ -102,4 +128,4 @@ export interface AppSettings {
   ingredientOutdatedDays: number;
 }
 
-export type Page = 'dashboard' | 'ingredients' | 'packaging' | 'recipes' | 'settings' | 'recipe-pricer' | 'recipe-details' | 'ingredient-form' | 'packaging-form' | 'ingredient-details' | 'fillings' | 'filling-pricer' | 'filling-details';
+export type Page = 'dashboard' | 'ingredients' | 'packaging' | 'recipes' | 'settings' | 'recipe-pricer' | 'recipe-details' | 'ingredient-form' | 'packaging-form' | 'ingredient-details' | 'fillings' | 'filling-pricer' | 'filling-details' | 'support';

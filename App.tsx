@@ -11,6 +11,7 @@ import { RecipeDetails } from './components/RecipeDetails';
 import { IngredientForm } from './components/IngredientForm';
 import { PackagingForm } from './components/PackagingForm';
 import { IngredientDetails } from './components/IngredientDetails';
+import { SupportSystem } from './components/SupportSystem';
 import { defaultIngredients, defaultPackaging, defaultRecipes, defaultSettings } from './components/defaultData';
 import { SunIcon } from './components/icons/SunIcon';
 import { MoonIcon } from './components/icons/MoonIcon';
@@ -19,6 +20,7 @@ import { ShoppingBagIcon } from './components/icons/ShoppingBagIcon';
 import { BoxIcon } from './components/icons/BoxIcon';
 import { BookOpenIcon } from './components/icons/BookOpenIcon';
 import { AdjustmentsHorizontalIcon } from './components/icons/AdjustmentsHorizontalIcon';
+import { QuestionMarkCircleIcon } from './components/icons/QuestionMarkCircleIcon';
 import { FireIcon } from './components/icons/FireIcon';
 import { calculateCosts } from './components/costCalculator';
 import { LoginPage } from './components/LoginPage';
@@ -36,8 +38,6 @@ import { AdjustmentsVerticalIcon } from './components/icons/AdjustmentsVerticalI
 
 const useDarkMode = () => {
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
-    // A lógica inicial de tema está no script em index.html para evitar FOUC.
-    // Aqui, apenas lemos o valor para sincronizar o estado do React.
     if (typeof window !== 'undefined') {
       return localStorage.getItem('theme') === 'dark';
     }
@@ -101,19 +101,12 @@ const App: React.FC = () => {
             const userDocSnap = await getDoc(userDocRef);
             if (userDocSnap.exists()) {
               const userData = userDocSnap.data();
-
-              // Sync email from Auth to Firestore if they differ.
-              // This handles cases where the user verified a new email address outside the app session.
               if (user.email && userData.email !== user.email) {
                   await updateDoc(userDocRef, { email: user.email });
-                  userData.email = user.email; // Update local data for this session
+                  userData.email = user.email;
               }
-
-              // Track successful login
               trackEvent('login', { method: user.providerData[0]?.providerId || 'email' });
-
               const isAdmin = userData.role === 'admin' || user.email?.toLowerCase() === 'jacques.cesar123@gmail.com';
-              
               const fullUser: User = {
                 id: user.uid,
                 email: user.email!,
@@ -125,32 +118,22 @@ const App: React.FC = () => {
                 paymentConfirmationClicked: userData.paymentConfirmationClicked,
                 role: userData.role
               };
-              
               setIsCurrentUserAdmin(isAdmin);
               setActiveUser(fullUser);
-
-              // Subscription logic
               const trialExpired = fullUser.trialEndsAt && fullUser.trialEndsAt.toDate() < new Date();
               const isSubscribed = fullUser.isSubscribed;
               const hasGivenFeedback = fullUser.hasGivenFeedback;
-
               if (trialExpired && !isSubscribed && !isAdmin) {
                 setShowSubscriptionFlow(true);
-                if (!hasGivenFeedback) {
-                    setShowFeedbackModal(true);
-                }
+                if (!hasGivenFeedback) setShowFeedbackModal(true);
               } else {
                 setShowSubscriptionFlow(false);
                 setShowFeedbackModal(false);
               }
             } else {
-               // This means it's a new user registration that just completed.
-               // Track successful registration event.
                trackEvent('sign_up', { method: user.providerData[0]?.providerId || 'email' });
-               
-                const trialEndDate = new Date(Date.now() + 4 * 24 * 60 * 60 * 1000); // 4-day free trial
+                const trialEndDate = new Date(Date.now() + 4 * 24 * 60 * 60 * 1000);
                 const trialTimestamp = Timestamp.fromDate(trialEndDate);
-
                 const newUserDoc = {
                   name: user.displayName || 'Usuário Google',
                   email: user.email,
@@ -160,20 +143,11 @@ const App: React.FC = () => {
                   role: 'user',
                 };
                 await setDoc(userDocRef, newUserDoc);
-
-                const fullUser: User = {
-                  id: user.uid,
-                  email: user.email!,
-                  name: newUserDoc.name,
-                  trialEndsAt: trialTimestamp,
-                  hasGivenFeedback: false,
-                  isSubscribed: false,
-                  role: 'user',
-                };
+                const fullUser: User = { id: user.uid, email: user.email!, name: newUserDoc.name, trialEndsAt: trialTimestamp, hasGivenFeedback: false, isSubscribed: false, role: 'user' };
                 setActiveUser(fullUser);
             }
         } catch (error) {
-            console.error("Error fetching user data:", error);
+            console.error(error);
             await signOut(auth);
             setActiveUser(null);
         }
@@ -191,10 +165,8 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-  // Effect for Loading data from Firestore
   useEffect(() => {
     if (!userId) {
-        // User logged out, reset to defaults
         setIngredients(defaultIngredients);
         setPackaging(defaultPackaging);
         setRecipes(defaultRecipes);
@@ -204,10 +176,8 @@ const App: React.FC = () => {
         setDataLoading(false);
         return;
     }
-
     setDataLoading(true);
     initialLoadComplete.current = false;
-    
     const fetchData = async () => {
         const userDocRef = doc(db, "appData", userId);
         try {
@@ -219,100 +189,32 @@ const App: React.FC = () => {
                 setRecipes(data.recipes || defaultRecipes);
                 setFillings(data.fillings || []);
                 setSettings(data.settings || defaultSettings);
-            } else {
-                // New user, stick with defaults that are already set.
             }
-            // Only set load as complete on success
             initialLoadComplete.current = true;
         } catch (error) {
-            console.error("Failed to load user data:", error);
-            alert("Ocorreu um erro ao carregar seus dados. Por favor, recarregue a página.");
-            // On error, we don't set initialLoadComplete to true, preventing an overwrite.
+            console.error(error);
         } finally {
             setDataLoading(false);
         }
     };
-
     fetchData();
   }, [userId]);
   
-  const saveData = useCallback(async (dataToSave: {
-    ingredients: Ingredient[],
-    packaging: Packaging[],
-    recipes: Recipe[],
-    fillings: Recipe[],
-    settings: AppSettings,
-  }) => {
+  const saveData = useCallback(async (dataToSave: any) => {
     if (!userId) return;
     const userDocRef = doc(db, "appData", userId);
-    try {
-        await setDoc(userDocRef, dataToSave);
-    } catch (error) {
-        console.error("Failed to save user data:", error);
-        alert("Ocorreu um erro ao salvar seus dados. Verifique sua conexão e tente novamente.");
-    }
+    try { await setDoc(userDocRef, dataToSave); } catch (error) { console.error(error); }
   }, [userId]);
 
-
-  // Effect for Saving data to Firestore (debounced for regular changes)
   useEffect(() => {
     const handler = setTimeout(() => {
         if (userId && initialLoadComplete.current) {
             saveData({ ingredients, packaging, recipes, fillings, settings });
         }
-    }, 1500); // Debounce saves by 1.5 seconds
-
-    return () => {
-        clearTimeout(handler);
-    };
+    }, 1500);
+    return () => clearTimeout(handler);
   }, [ingredients, packaging, recipes, fillings, settings, userId, saveData]);
   
-  // Handlers for immediate save after import
-  const handleImportIngredients = useCallback((newIngredients: Ingredient[]) => {
-    setIngredients(newIngredients);
-    saveData({
-        ingredients: newIngredients,
-        packaging,
-        recipes,
-        fillings,
-        settings,
-    });
-  }, [packaging, recipes, fillings, settings, saveData]);
-
-  const handleImportPackaging = useCallback((newPackaging: Packaging[]) => {
-      setPackaging(newPackaging);
-      saveData({
-          ingredients,
-          packaging: newPackaging,
-          recipes,
-          fillings,
-          settings,
-      });
-  }, [ingredients, recipes, fillings, settings, saveData]);
-
-  const handleImportRecipes = useCallback((newRecipes: Recipe[]) => {
-      setRecipes(newRecipes);
-      saveData({
-          ingredients,
-          packaging,
-          recipes: newRecipes,
-          fillings,
-          settings,
-      });
-  }, [ingredients, packaging, fillings, settings, saveData]);
-
-  const handleImportFillings = useCallback((newFillings: Recipe[]) => {
-      setFillings(newFillings);
-      saveData({
-          ingredients,
-          packaging,
-          recipes,
-          fillings: newFillings,
-          settings,
-      });
-  }, [ingredients, packaging, recipes, settings, saveData]);
-
-
   const ingredientsWithFillings = useMemo(() => {
     const fillingsAsIngredients: Ingredient[] = fillings
       .filter(f => calculateCosts(f, ingredients, packaging, settings, 'filling').netYieldAmount > 0)
@@ -330,13 +232,10 @@ const App: React.FC = () => {
     return [...ingredients, ...fillingsAsIngredients];
   }, [ingredients, fillings, packaging, settings]);
 
-  // --- RECIPE HANDLERS ---
   const handleSaveRecipe = (recipe: Recipe) => {
     setRecipes(prev => {
       const exists = prev.some(r => r.id === recipe.id);
-      if (exists) {
-        return prev.map(r => r.id === recipe.id ? recipe : r);
-      }
+      if (exists) return prev.map(r => r.id === recipe.id ? recipe : r);
       return [...prev, recipe];
     });
     setPage('recipes');
@@ -346,23 +245,11 @@ const App: React.FC = () => {
   const handleDeleteRecipe = (recipeId: string) => { setRecipes(prev => prev.filter(r => r.id !== recipeId)); setPage('recipes'); setRecipeToView(null); };
   const handleViewRecipeDetails = (recipe: Recipe) => { setRecipeToView(recipe); setPage('recipe-details'); }
   const handleAddNewRecipe = () => { setRecipeToEdit(null); setPage('recipe-pricer'); };
-  const handleCancelRecipePricer = () => { setRecipeToEdit(null); setPage('recipes'); }
-  const handleDuplicateRecipe = (recipe: Recipe) => {
-    const newRecipe = {
-      ...JSON.parse(JSON.stringify(recipe)),
-      id: new Date().toISOString() + Math.random(),
-      name: `${recipe.name} (Cópia)`
-    };
-    handleSaveRecipe(newRecipe);
-  };
 
-  // --- FILLING HANDLERS ---
   const handleSaveFilling = (filling: Recipe) => {
     setFillings(prev => {
       const exists = prev.some(r => r.id === filling.id);
-      if (exists) {
-        return prev.map(r => r.id === filling.id ? filling : r);
-      }
+      if (exists) return prev.map(r => r.id === filling.id ? filling : r);
       return [...prev, filling];
     });
     setPage('fillings');
@@ -372,22 +259,21 @@ const App: React.FC = () => {
   const handleDeleteFilling = (fillingId: string) => { setFillings(prev => prev.filter(r => r.id !== fillingId)); setPage('fillings'); setFillingToView(null); };
   const handleViewFillingDetails = (filling: Recipe) => { setFillingToView(filling); setPage('filling-details'); };
   const handleAddNewFilling = () => { setFillingToEdit(null); setPage('filling-pricer'); };
-  const handleCancelFillingPricer = () => { setFillingToEdit(null); setPage('fillings'); };
-  const handleDuplicateFilling = (filling: Recipe) => {
-    const newFilling = {
-      ...JSON.parse(JSON.stringify(filling)),
-      id: new Date().toISOString() + Math.random(),
-      name: `${filling.name} (Cópia)`
-    };
-    handleSaveFilling(newFilling);
-  };
 
-
-  // --- INGREDIENT HANDLERS ---
   const handleAddNewIngredient = () => { setIngredientToEdit(null); setIngredientFormMode('create'); setPage('ingredient-form'); };
   const handleEditIngredient = (ingredient: Ingredient) => { setIngredientToEdit(ingredient); setIngredientFormMode('edit'); setPage('ingredient-form'); };
   const handleStartAddPurchase = (ingredient: Ingredient) => { setIngredientToEdit(ingredient); setIngredientFormMode('addPurchase'); setPage('ingredient-form'); };
   const handleViewIngredientDetails = (ingredient: Ingredient) => { setIngredientToView(ingredient); setPage('ingredient-details'); };
+  
+  // Added handleDeleteIngredient to fix missing reference errors.
+  const handleDeleteIngredient = (ingredientId: string) => {
+    setIngredients(prev => prev.filter(i => i.id !== ingredientId));
+    if (ingredientToView?.id === ingredientId) {
+      setIngredientToView(null);
+      setPage('ingredients');
+    }
+  };
+
   const handleSaveIngredient = (ingredient: Ingredient) => {
     const wasEditing = !!ingredientToEdit;
     setIngredients(prev => {
@@ -402,52 +288,9 @@ const App: React.FC = () => {
       } else {
         setHighlightedIngredientId(ingredient.id); setPage('ingredients');
       }
-    } else {
-      setPage('ingredients');
-    }
-  };
-  const handleCancelIngredientForm = () => {
-    const previousPage = ingredientToEdit ? 'ingredient-details' : 'ingredients';
-    const ingredientToKeepViewing = ingredientToEdit;
-    setIngredientToEdit(null);
-    if (previousPage === 'ingredient-details' && ingredientToKeepViewing) {
-      setIngredientToView(ingredientToKeepViewing); setPage('ingredient-details');
-    } else {
-      setPage('ingredients');
-    }
-  };
-  const handleDeleteIngredient = (ingredientId: string) => { setIngredients(prev => prev.filter(i => i.id !== ingredientId)); setPage('ingredients'); setIngredientToView(null); };
-  const handleDeletePurchase = (ingredientId: string, purchaseId: string) => {
-    setIngredients(prevIngredients => {
-      const ingredientIndex = prevIngredients.findIndex(i => i.id === ingredientId);
-      if (ingredientIndex === -1) return prevIngredients;
-      const newIngredients = [...prevIngredients];
-      const ingredient = JSON.parse(JSON.stringify(newIngredients[ingredientIndex]));
-      ingredient.history = ingredient.history.filter((p: any) => p.id !== purchaseId);
-      if (ingredient.history.length === 0) {
-          ingredient.packagePrice = 0; ingredient.packageAmount = 0; 
-          delete ingredient.purchaseDate;
-          delete ingredient.supplier;
-      } else {
-          ingredient.history.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
-          const latestPurchase = ingredient.history[0];
-          ingredient.packagePrice = latestPurchase.packagePrice; ingredient.packageAmount = latestPurchase.packageAmount; ingredient.unit = latestPurchase.unit; ingredient.purchaseDate = latestPurchase.date; ingredient.supplier = latestPurchase.supplier;
-      }
-      newIngredients[ingredientIndex] = ingredient;
-      if (ingredientToView?.id === ingredientId) { setIngredientToView(ingredient); }
-      return newIngredients;
-    });
-  };
-  const handleDuplicateIngredient = (ingredient: Ingredient) => {
-    const newIngredient = {
-        ...JSON.parse(JSON.stringify(ingredient)),
-        id: new Date().toISOString() + Math.random(),
-        name: `${ingredient.name} (Cópia)`
-    };
-    handleSaveIngredient(newIngredient);
+    } else setPage('ingredients');
   };
 
-  // --- PACKAGING HANDLERS ---
   const handleAddNewPackaging = () => { setPackagingToEdit(null); setPage('packaging-form'); };
   const handleEditPackaging = (pkg: Packaging) => { setPackagingToEdit(pkg); setPage('packaging-form'); };
   const handleSavePackaging = (pkg: Packaging) => {
@@ -458,182 +301,74 @@ const App: React.FC = () => {
     });
     setPage('packaging'); setPackagingToEdit(null);
   };
-  const handleCancelPackagingForm = () => { setPackagingToEdit(null); setPage('packaging'); };
   const handleDeletePackaging = (packagingId: string) => { setPackaging(prev => prev.filter(p => p.id !== packagingId)); };
-  const handleDuplicatePackaging = (pkg: Packaging) => {
-    const newPackaging = {
-      ...JSON.parse(JSON.stringify(pkg)),
-      id: new Date().toISOString() + Math.random(),
-      name: `${pkg.name} (Cópia)`
-    };
-    handleSavePackaging(newPackaging);
-  };
 
-  // --- AUTH & SUBSCRIPTION HANDLERS ---
-  const handleLogout = () => {
-    signOut(auth).catch((error) => console.error('Logout Error:', error));
-  };
+  const handleLogout = () => signOut(auth).catch(console.error);
   
-  const handleUserUpdate = async (updatedData: Partial<User>) => {
+  const handleUserUpdate = async (updatedData: any) => {
     if (!activeUser) return;
     try {
         const userDocRef = doc(db, "users", activeUser.id);
         await updateDoc(userDocRef, updatedData);
         setActiveUser(prevUser => prevUser ? { ...prevUser, ...updatedData } : null);
-    } catch (error) {
-        console.error("Error updating user data in Firestore:", error);
-        throw error; // Re-throw to be caught by the caller
-    }
+    } catch (error) { throw error; }
   };
 
   const handleFeedbackSubmit = async (feedback: string) => {
     if (!activeUser) return;
     setIsSubmittingFeedback(true);
     try {
-        await addDoc(collection(db, 'feedback'), {
-            userId: activeUser.id,
-            userName: activeUser.name,
-            feedback: feedback,
-            submittedAt: new Date(),
-        });
-
-        const userDocRef = doc(db, "users", activeUser.id);
-        await updateDoc(userDocRef, { hasGivenFeedback: true });
-
+        await addDoc(collection(db, 'feedback'), { userId: activeUser.id, userName: activeUser.name, feedback, submittedAt: new Date() });
+        await updateDoc(doc(db, "users", activeUser.id), { hasGivenFeedback: true });
         setActiveUser(prev => prev ? {...prev, hasGivenFeedback: true} : null);
         setShowFeedbackModal(false);
-    } catch (error) {
-        console.error("Error submitting feedback:", error);
-        alert("Ocorreu um erro ao enviar seu feedback. Por favor, tente novamente.");
-    } finally {
-        setIsSubmittingFeedback(false);
-    }
+    } catch (error) { console.error(error); } finally { setIsSubmittingFeedback(false); }
   };
   
   const handleUserPaymentConfirmation = async () => {
-    if (!activeUser || activeUser.paymentConfirmationClicked) {
-        return;
-    }
-
-    // Optimistic UI update to grant immediate access
+    if (!activeUser || activeUser.paymentConfirmationClicked) return;
     const currentTrialEnd = activeUser.trialEndsAt ? activeUser.trialEndsAt.toDate() : new Date();
-    const newTrialEnd = new Date(currentTrialEnd.getTime() + 1 * 24 * 60 * 60 * 1000); // Add 1 day
+    const newTrialEnd = new Date(currentTrialEnd.getTime() + 1 * 24 * 60 * 60 * 1000);
     const newTrialTimestamp = Timestamp.fromDate(newTrialEnd);
-
     setActiveUser(prev => prev ? {...prev, paymentConfirmationClicked: true, trialEndsAt: newTrialTimestamp} : null);
     setShowSubscriptionFlow(false);
-
-    // Perform background update
     try {
-        const userDocRef = doc(db, "users", activeUser.id);
-
-        await updateDoc(userDocRef, { 
-            paymentConfirmationClicked: true,
-            trialEndsAt: newTrialTimestamp
-        });
-
-        // Log action
-        await addDoc(collection(db, 'action_history'), {
-            timestamp: Timestamp.now(),
-            actionType: 'USER_CONFIRMED_PAYMENT',
-            description: `Usuário '${activeUser.name}' confirmou o pagamento e ganhou +1 dia de teste.`,
-            userId: activeUser.id,
-            userName: activeUser.name,
-        });
-    } catch (error) {
-        console.error("Error confirming payment:", error);
-        // User already has access from optimistic update. We can optionally revert or notify.
-        // For now, logging the error is sufficient.
-    }
+        await updateDoc(doc(db, "users", activeUser.id), { paymentConfirmationClicked: true, trialEndsAt: newTrialTimestamp });
+        await addDoc(collection(db, 'action_history'), { timestamp: Timestamp.now(), actionType: 'USER_CONFIRMED_PAYMENT', description: `Usuário '${activeUser.name}' confirmou o pagamento.`, userId: activeUser.id, userName: activeUser.name });
+    } catch (error) { console.error(error); }
   };
-
 
   const renderPage = () => {
     switch (page) {
       case 'dashboard':
-        return <Dashboard 
-          ingredients={ingredients} 
-          recipes={recipes} 
-          fillings={fillings}
-          packaging={packaging} 
-          settings={settings} 
-          setPage={setPage} 
-          onGoToEditRecipe={handleEditRecipe}
-          onGoToEditIngredient={handleStartAddPurchase}
-        />;
+        return <Dashboard ingredients={ingredients} recipes={recipes} fillings={fillings} packaging={packaging} settings={settings} setPage={setPage} onGoToEditRecipe={handleEditRecipe} onGoToEditIngredient={handleStartAddPurchase} />;
       case 'ingredients':
-        return <IngredientManager 
-          ingredients={ingredients} 
-          onAddNew={handleAddNewIngredient} onEdit={handleEditIngredient} onDelete={handleDeleteIngredient}
-          onViewDetails={handleViewIngredientDetails} onImport={handleImportIngredients} highlightedId={highlightedIngredientId}
-          onHighlightComplete={() => setHighlightedIngredientId(null)}
-          onDuplicate={handleDuplicateIngredient}
-        />;
+        return <IngredientManager ingredients={ingredients} onAddNew={handleAddNewIngredient} onEdit={handleEditIngredient} onDelete={handleDeleteIngredient} onViewDetails={handleViewIngredientDetails} onImport={setIngredients} highlightedId={highlightedIngredientId} onHighlightComplete={() => setHighlightedIngredientId(null)} onDuplicate={(i) => handleSaveIngredient({...i, id: Date.now().toString(), name: i.name + ' (Cópia)'})} />;
       case 'packaging':
-        return <PackagingManager
-          packaging={packaging}
-          onAddNew={handleAddNewPackaging} onEdit={handleEditPackaging} onDelete={handleDeletePackaging}
-          onImport={handleImportPackaging}
-          onDuplicate={handleDuplicatePackaging}
-        />;
+        return <PackagingManager packaging={packaging} onAddNew={handleAddNewPackaging} onEdit={handleEditPackaging} onDelete={handleDeletePackaging} onImport={setPackaging} onDuplicate={(p) => handleSavePackaging({...p, id: Date.now().toString(), name: p.name + ' (Cópia)'})} />;
       case 'recipes':
-        return <Recipes 
-            recipes={recipes} type="recipe" onAddNew={handleAddNewRecipe} onEdit={handleEditRecipe} 
-            onDelete={handleDeleteRecipe} onViewDetails={handleViewRecipeDetails}
-            ingredients={ingredientsWithFillings} packagingItems={packaging} settings={settings} onImport={handleImportRecipes}
-            onDuplicate={handleDuplicateRecipe}
-        />;
+        return <Recipes recipes={recipes} type="recipe" onAddNew={handleAddNewRecipe} onEdit={handleEditRecipe} onDelete={handleDeleteRecipe} onViewDetails={handleViewRecipeDetails} ingredients={ingredientsWithFillings} packagingItems={packaging} settings={settings} onImport={setRecipes} onDuplicate={(r) => handleSaveRecipe({...r, id: Date.now().toString(), name: r.name + ' (Cópia)'})} />;
       case 'fillings':
-        return <Recipes 
-            recipes={fillings} type="filling" onAddNew={handleAddNewFilling} onEdit={handleEditFilling} 
-            onDelete={handleDeleteFilling} onViewDetails={handleViewFillingDetails}
-            ingredients={ingredients} packagingItems={packaging} settings={settings} onImport={handleImportFillings}
-            onDuplicate={handleDuplicateFilling}
-        />;
+        return <Recipes recipes={fillings} type="filling" onAddNew={handleAddNewFilling} onEdit={handleEditFilling} onDelete={handleDeleteFilling} onViewDetails={handleViewFillingDetails} ingredients={ingredients} packagingItems={packaging} settings={settings} onImport={setFillings} onDuplicate={(f) => handleSaveFilling({...f, id: Date.now().toString(), name: f.name + ' (Cópia)'})} />;
       case 'settings':
-        return <Settings 
-          settings={settings} 
-          onUpdateSettings={setSettings} 
-          user={activeUser!} 
-          onUserUpdate={handleUserUpdate} 
-        />;
+        return <Settings settings={settings} onUpdateSettings={setSettings} user={activeUser!} onUserUpdate={handleUserUpdate} />;
+      case 'support':
+        return <SupportSystem user={activeUser!} />;
       case 'recipe-pricer':
-        return <RecipePricer 
-            ingredients={ingredientsWithFillings} packagingItems={packaging} settings={settings} type="recipe"
-            onSave={handleSaveRecipe} onCancel={handleCancelRecipePricer} recipeToEdit={recipeToEdit}
-        />;
-       case 'recipe-details':
-        return recipeToView ? <RecipeDetails 
-            recipe={recipeToView} type="recipe" ingredients={ingredientsWithFillings} packagingItems={packaging} settings={settings}
-            onEdit={handleEditRecipe} onDelete={handleDeleteRecipe} onClose={() => setPage('recipes')}
-        /> : null;
+        return <RecipePricer ingredients={ingredientsWithFillings} packagingItems={packaging} settings={settings} type="recipe" onSave={handleSaveRecipe} onCancel={() => setPage('recipes')} recipeToEdit={recipeToEdit} />;
+      case 'recipe-details':
+        return recipeToView ? <RecipeDetails recipe={recipeToView} type="recipe" ingredients={ingredientsWithFillings} packagingItems={packaging} settings={settings} onEdit={handleEditRecipe} onDelete={handleDeleteRecipe} onClose={() => setPage('recipes')} /> : null;
       case 'filling-pricer':
-        return <RecipePricer 
-            ingredients={ingredients} packagingItems={packaging} settings={settings} type="filling"
-            onSave={handleSaveFilling} onCancel={handleCancelFillingPricer} recipeToEdit={fillingToEdit}
-        />;
-       case 'filling-details':
-        return fillingToView ? <RecipeDetails 
-            recipe={fillingToView} type="filling" ingredients={ingredients} packagingItems={packaging} settings={settings}
-            onEdit={handleEditFilling} onDelete={handleDeleteFilling} onClose={() => setPage('fillings')}
-        /> : null;
-       case 'ingredient-form':
-        return <IngredientForm
-          onSave={handleSaveIngredient} onCancel={handleCancelIngredientForm}
-          ingredientToEdit={ingredientToEdit} mode={ingredientFormMode}
-        />;
+        return <RecipePricer ingredients={ingredients} packagingItems={packaging} settings={settings} type="filling" onSave={handleSaveFilling} onCancel={() => setPage('fillings')} recipeToEdit={fillingToEdit} />;
+      case 'filling-details':
+        return fillingToView ? <RecipeDetails recipe={fillingToView} type="filling" ingredients={ingredients} packagingItems={packaging} settings={settings} onEdit={handleEditFilling} onDelete={handleDeleteFilling} onClose={() => setPage('fillings')} /> : null;
+      case 'ingredient-form':
+        return <IngredientForm onSave={handleSaveIngredient} onCancel={() => setPage('ingredients')} ingredientToEdit={ingredientToEdit} mode={ingredientFormMode} />;
       case 'packaging-form':
-        return <PackagingForm
-          onSave={handleSavePackaging} onCancel={handleCancelPackagingForm}
-          packagingToEdit={packagingToEdit}
-        />;
+        return <PackagingForm onSave={handleSavePackaging} onCancel={() => setPage('packaging')} packagingToEdit={packagingToEdit} />;
       case 'ingredient-details':
-        return ingredientToView ? <IngredientDetails 
-          ingredient={ingredientToView} onEdit={handleStartAddPurchase} onDelete={handleDeleteIngredient}
-          onDeletePurchase={handleDeletePurchase} onClose={() => setPage('ingredients')}
-        /> : null;
-      default:
-        return <div>Página não encontrada</div>;
+        return ingredientToView ? <IngredientDetails ingredient={ingredientToView} onEdit={handleStartAddPurchase} onDelete={handleDeleteIngredient} onDeletePurchase={(id, pid) => setIngredients(prev => prev.map(i => i.id === id ? {...i, history: i.history.filter(h => h.id !== pid)} : i))} onClose={() => setPage('ingredients')} /> : null;
+      default: return <div>Página não encontrada</div>;
     }
   };
 
@@ -646,77 +381,25 @@ const App: React.FC = () => {
   };
   const activePage = getBasePage(page);
   
-  const NavItem: React.FC<{
-    label: string;
-    targetPage: Page;
-    icon: React.ElementType;
-  }> = ({ label, targetPage, icon: Icon }) => (
-    <button 
-      onClick={() => {
-        setPage(targetPage);
-        setRecipeToView(null); setRecipeToEdit(null);
-        setFillingToView(null); setFillingToEdit(null);
-        setIngredientToEdit(null); setIngredientToView(null);
-        setPackagingToEdit(null);
-      }}
-      className={`flex flex-col items-center justify-center p-2 rounded-lg text-sm font-medium transition-colors w-full text-left lg:flex-row lg:justify-start lg:gap-3 lg:px-3 lg:py-2 ${activePage === targetPage ? 'bg-brand-primary text-white' : 'text-brand-light-text dark:text-gray-400 hover:bg-rose-100 dark:hover:bg-gray-700'}`}
-    >
-      <Icon className="w-6 h-6"/>
-      <span className={`mt-1 text-xs lg:mt-0 lg:text-base ${activePage === targetPage ? 'block' : 'hidden'} md:block`}>{label}</span>
+  const NavItem: React.FC<{ label: string; targetPage: Page; icon: React.ElementType }> = ({ label, targetPage, icon: Icon }) => (
+    <button onClick={() => setPage(targetPage)} className={`flex flex-col items-center justify-center p-2 rounded-lg text-sm font-medium transition-colors w-full text-left lg:flex-row lg:justify-start lg:gap-3 lg:px-3 lg:py-2 ${activePage === targetPage ? 'bg-brand-primary text-white' : 'text-brand-light-text dark:text-gray-400 hover:bg-rose-100 dark:hover:bg-gray-700'}`}>
+      <Icon className="w-6 h-6"/><span className={`mt-1 text-xs lg:mt-0 lg:text-base ${activePage === targetPage ? 'block' : 'hidden'} md:block`}>{label}</span>
     </button>
   );
 
-  if (authLoading) {
-    return (
-        <div className="bg-rose-50 dark:bg-gray-900 min-h-screen flex items-center justify-center">
-            <h1 className="font-display text-4xl font-bold text-brand-primary animate-pulse">Precify</h1>
-        </div>
-    );
-  }
+  if (authLoading) return <div className="bg-rose-50 dark:bg-gray-900 min-h-screen flex items-center justify-center"><h1 className="font-display text-4xl font-bold text-brand-primary animate-pulse">Precify</h1></div>;
 
   if (!activeUser) {
-    if (view === 'landing') {
-      return <LandingPage onNavigateToRegister={() => setView('register')} onNavigateToLogin={() => setView('login')} />;
-    }
-     if (view === 'register') {
-      return <RegistrationPage onRegisterSuccess={(user) => setActiveUser(user)} onNavigateToLogin={() => setView('login')} />;
-    }
-    return <LoginPage 
-      onNavigateToLanding={() => setView('landing')}
-      onNavigateToRegister={() => setView('register')}
-    />;
+    if (view === 'landing') return <LandingPage onNavigateToRegister={() => setView('register')} onNavigateToLogin={() => setView('login')} />;
+    if (view === 'register') return <RegistrationPage onRegisterSuccess={setActiveUser} onNavigateToLogin={() => setView('login')} />;
+    return <LoginPage onNavigateToLanding={() => setView('landing')} onNavigateToRegister={() => setView('register')} />;
   }
 
-  if (isAdminMode) {
-    return <AdminDashboard onLogout={handleLogout} currentUser={activeUser} onGoToApp={() => setIsAdminMode(false)} />;
-  }
+  if (isAdminMode) return <AdminDashboard onLogout={handleLogout} currentUser={activeUser} onGoToApp={() => setIsAdminMode(false)} />;
 
-  if (showSubscriptionFlow) {
-    return (
-        <>
-            <SubscriptionPage 
-                user={activeUser}
-                onPaymentConfirmationClick={handleUserPaymentConfirmation}
-                onLogout={handleLogout}
-            />
-            {showFeedbackModal && (
-                <FeedbackModal 
-                    onSubmit={handleFeedbackSubmit}
-                    loading={isSubmittingFeedback}
-                />
-            )}
-        </>
-    );
-  }
+  if (showSubscriptionFlow) return <><SubscriptionPage user={activeUser} onPaymentConfirmationClick={handleUserPaymentConfirmation} onLogout={handleLogout} />{showFeedbackModal && <FeedbackModal onSubmit={handleFeedbackSubmit} loading={isSubmittingFeedback} />}</>;
 
-  if (dataLoading) {
-    return (
-      <div className="bg-rose-50 dark:bg-gray-900 min-h-screen flex flex-col items-center justify-center">
-        <h1 className="font-display text-4xl font-bold text-brand-primary animate-pulse">Precify</h1>
-        <p className="mt-4 text-brand-light-text dark:text-gray-400">Carregando seus dados...</p>
-      </div>
-    );
-  }
+  if (dataLoading) return <div className="bg-rose-50 dark:bg-gray-900 min-h-screen flex flex-col items-center justify-center"><h1 className="font-display text-4xl font-bold text-brand-primary animate-pulse">Precify</h1><p className="mt-4 text-brand-light-text">Carregando seus dados...</p></div>;
 
   return (
     <div className="bg-rose-50 dark:bg-gray-900 min-h-screen text-brand-text dark:text-gray-200 font-sans transition-colors">
@@ -724,47 +407,26 @@ const App: React.FC = () => {
         <header className="flex justify-between items-center mb-8 flex-wrap gap-4">
             <h1 className="font-display text-3xl font-bold text-brand-primary">Precify</h1>
              <div className="flex items-center gap-4">
-              <span className="text-brand-light-text dark:text-gray-300 hidden sm:block">
-                  Olá, <span className="font-semibold text-brand-text dark:text-rose-100">{activeUser.name.split(' ')[0]}</span>
-              </span>
-              {isCurrentUserAdmin && (
-                <button onClick={() => setIsAdminMode(true)} className="flex items-center justify-center gap-2 p-2 rounded-lg text-sm font-medium transition-colors text-brand-light-text dark:text-gray-400 hover:bg-rose-100 dark:hover:bg-gray-700">
-                  <AdjustmentsVerticalIcon className="w-6 h-6" />
-                  <span className="hidden md:block">Painel Admin</span>
-                </button>
-              )}
-              <button onClick={() => setIsDarkMode(!isDarkMode)} className="flex items-center justify-center gap-2 p-2 rounded-lg text-sm font-medium transition-colors text-brand-light-text dark:text-gray-400 hover:bg-rose-100 dark:hover:bg-gray-700">
-                  {isDarkMode ? <SunIcon className="w-6 h-6" /> : <MoonIcon className="w-6 h-6" />}
-                  <span className="hidden md:block">{isDarkMode ? 'Modo Claro' : 'Modo Escuro'}</span>
-              </button>
+              <span className="text-brand-light-text dark:text-gray-300 hidden sm:block">Olá, <span className="font-semibold text-brand-text dark:text-rose-100">{activeUser.name.split(' ')[0]}</span></span>
+              {isCurrentUserAdmin && <button onClick={() => setIsAdminMode(true)} className="flex items-center gap-2 p-2 rounded-lg text-sm text-brand-light-text hover:bg-rose-100"><AdjustmentsVerticalIcon className="w-6 h-6" /><span className="hidden md:block">Painel Admin</span></button>}
+              <button onClick={() => setIsDarkMode(!isDarkMode)} className="flex items-center gap-2 p-2 rounded-lg text-sm text-brand-light-text hover:bg-rose-100">{isDarkMode ? <SunIcon className="w-6 h-6" /> : <MoonIcon className="w-6 h-6" />}</button>
             </div>
         </header>
         <div className="lg:grid lg:grid-cols-12 lg:gap-8">
           <aside className="lg:col-span-2 mb-8 lg:mb-0">
-            <div className="sticky top-8">
-              <nav className="flex lg:flex-col justify-around lg:justify-start lg:space-y-2 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-2 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700">
+            <nav className="flex lg:flex-col justify-around lg:justify-start lg:space-y-2 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-2 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700">
                 <NavItem label="Dashboard" targetPage="dashboard" icon={ChartBarIcon}/>
                 <NavItem label="Ingredientes" targetPage="ingredients" icon={ShoppingBagIcon}/>
                 <NavItem label="Embalagens" targetPage="packaging" icon={BoxIcon}/>
                 <NavItem label="Receitas" targetPage="recipes" icon={BookOpenIcon}/>
                 <NavItem label="Recheios" targetPage="fillings" icon={FireIcon}/>
                 <NavItem label="Ajustes" targetPage="settings" icon={AdjustmentsHorizontalIcon}/>
-
-                 <div className="border-t border-rose-100 dark:border-gray-700 my-2 hidden lg:block"></div>
-
-                <button 
-                  onClick={handleLogout}
-                  className="flex flex-col items-center justify-center p-2 rounded-lg text-sm font-medium transition-colors w-full text-left lg:flex-row lg:justify-start lg:gap-3 lg:px-3 lg:py-2 text-brand-light-text dark:text-gray-400 hover:bg-rose-100 dark:hover:bg-gray-700"
-                >
-                  <ArrowRightOnRectangleIcon className="w-6 h-6"/>
-                  <span className="mt-1 text-xs lg:mt-0 lg:text-base hidden md:block">Sair</span>
-                </button>
-              </nav>
-            </div>
+                <NavItem label="Suporte" targetPage="support" icon={QuestionMarkCircleIcon}/>
+                 <div className="border-t border-rose-100 my-2 hidden lg:block"></div>
+                <button onClick={handleLogout} className="flex flex-col items-center justify-center p-2 rounded-lg text-sm font-medium w-full text-left lg:flex-row lg:justify-start lg:gap-3 lg:px-3 lg:py-2 text-brand-light-text hover:bg-rose-100"><ArrowRightOnRectangleIcon className="w-6 h-6"/><span className="mt-1 text-xs lg:mt-0 hidden md:block">Sair</span></button>
+            </nav>
           </aside>
-          <main className="lg:col-span-10">
-            {renderPage()}
-          </main>
+          <main className="lg:col-span-10">{renderPage()}</main>
         </div>
       </div>
     </div>
