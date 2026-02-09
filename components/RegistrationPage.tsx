@@ -1,14 +1,16 @@
+
 import React, { useState, useEffect } from 'react';
 import { auth, db, googleProvider } from './firebase';
 import { createUserWithEmailAndPassword, updateProfile, signInWithPopup } from 'firebase/auth';
 import { doc, setDoc, getDoc, Timestamp } from 'firebase/firestore';
 import { GoogleIcon } from './icons/GoogleIcon';
-import type { User } from '../types';
+import type { User, GlobalConfig } from '../types';
 import { trackEvent } from './utils';
 
 interface RegistrationPageProps {
   onRegisterSuccess: (user: User) => void;
   onNavigateToLogin: () => void;
+  globalConfig: GlobalConfig;
 }
 
 const formatPhone = (value: string) => {
@@ -19,7 +21,7 @@ const formatPhone = (value: string) => {
     .slice(0, 15);
 };
 
-export const RegistrationPage: React.FC<RegistrationPageProps> = ({ onRegisterSuccess, onNavigateToLogin }) => {
+export const RegistrationPage: React.FC<RegistrationPageProps> = ({ onRegisterSuccess, onNavigateToLogin, globalConfig }) => {
   const [formData, setFormData] = useState({
     fullName: '',
     phone: '',
@@ -64,12 +66,11 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ onRegisterSu
         const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
         const user = userCredential.user;
 
-        // Update profile in Firebase Auth
         await updateProfile(user, {
             displayName: formData.fullName,
         });
 
-        const trialEndDate = new Date(Date.now() + 4 * 24 * 60 * 60 * 1000); // 4-day free trial
+        const trialEndDate = new Date(Date.now() + (globalConfig.trialDays || 4) * 24 * 60 * 60 * 1000);
         const trialTimestamp = Timestamp.fromDate(trialEndDate);
 
         const userData = {
@@ -80,7 +81,6 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ onRegisterSu
             hasGivenFeedback: false,
             isSubscribed: false,
         };
-        // Create user document in Firestore
         await setDoc(doc(db, "users", user.uid), userData);
         
         const fullUser: User = {
@@ -132,7 +132,7 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ onRegisterSu
             paymentConfirmationClicked: userData.paymentConfirmationClicked,
         };
       } else {
-        const trialEndDate = new Date(Date.now() + 4 * 24 * 60 * 60 * 1000); // 4-day free trial
+        const trialEndDate = new Date(Date.now() + (globalConfig.trialDays || 4) * 24 * 60 * 60 * 1000);
         const trialTimestamp = Timestamp.fromDate(trialEndDate);
         
         const newUserDoc = {
@@ -167,7 +167,7 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({ onRegisterSu
 
   return (
     <div className="bg-rose-50 dark:bg-gray-900 min-h-screen flex items-center justify-center p-4 font-sans animate-fade-in">
-      <div className="w-full max-w-md mx-auto">
+      <div className="w-full max-md mx-auto">
         <div className="text-center mb-8">
             <h1 className="font-display text-6xl font-bold text-brand-primary">Precify</h1>
             <p className="text-brand-light-text dark:text-gray-400 mt-2">Sua confeitaria sob controle.</p>

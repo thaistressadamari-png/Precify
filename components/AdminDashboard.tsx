@@ -1,14 +1,85 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from './firebase';
-import { collection, getDocs, doc, updateDoc, Timestamp, addDoc, query, orderBy, limit, where, writeBatch, onSnapshot, arrayUnion } from 'firebase/firestore';
-import type { User, ActionHistory, SupportTicket, TicketStatus, SupportMessage } from '../types';
+import { collection, getDocs, doc, updateDoc, Timestamp, addDoc, query, orderBy, limit, where, writeBatch, onSnapshot, arrayUnion, setDoc } from 'firebase/firestore';
+import type { User, ActionHistory, SupportTicket, TicketStatus, SupportMessage, GlobalConfig } from '../types';
 import { ArrowRightOnRectangleIcon } from './icons/ArrowRightOnRectangleIcon';
 import { SearchIcon } from './icons/SearchIcon';
 import { AdjustmentsHorizontalIcon } from './icons/AdjustmentsHorizontalIcon';
 import { ArrowUturnLeftIcon } from './icons/ArrowUturnLeftIcon';
 import { QuestionMarkCircleIcon } from './icons/QuestionMarkCircleIcon';
+import { Cog6ToothIcon } from './icons/Cog6ToothIcon';
 import { BulkActionModal } from './BulkActionModal';
+
+// --- GLOBAL CONFIG COMPONENT ---
+const GlobalConfigPanel: React.FC<{ config: GlobalConfig; adminUser: User }> = ({ config, adminUser }) => {
+    const [localConfig, setLocalConfig] = useState<GlobalConfig>(config);
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        setLocalConfig(config);
+    }, [config]);
+
+    const handleSave = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setLoading(true);
+        try {
+            await setDoc(doc(db, "app_config", "global"), localConfig);
+            
+            await addDoc(collection(db, 'action_history'), {
+                timestamp: Timestamp.now(),
+                actionType: 'GLOBAL_CONFIG_CHANGE',
+                description: `Admin '${adminUser.name}' alterou as configurações globais (Trial: ${localConfig.trialDays}d, Link: ${localConfig.paymentLink}).`,
+                adminId: adminUser.id,
+                adminName: adminUser.name,
+                userId: adminUser.id,
+                userName: adminUser.name,
+                details: { old: config, new: localConfig }
+            });
+            alert("Configurações salvas com sucesso!");
+        } catch (err) {
+            console.error(err);
+            alert("Erro ao salvar configurações.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <form onSubmit={handleSave} className="space-y-6 max-w-xl animate-fade-in">
+            <div>
+                <label className="block text-sm font-medium text-brand-light-text dark:text-gray-400 mb-1">Link de Pagamento (Checkout Kiwify/Outro)</label>
+                <input 
+                    type="url" 
+                    value={localConfig.paymentLink}
+                    onChange={e => setLocalConfig({...localConfig, paymentLink: e.target.value})}
+                    placeholder="https://pay.kiwify.com.br/..."
+                    className="block w-full px-4 py-2 bg-white dark:bg-gray-700 dark:text-gray-200 border border-rose-200 dark:border-gray-600 rounded-lg shadow-sm focus:ring-brand-secondary focus:border-brand-secondary"
+                    required
+                />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-brand-light-text dark:text-gray-400 mb-1">Duração do Teste Gratuito (Dias)</label>
+                <input 
+                    type="number" 
+                    value={localConfig.trialDays}
+                    onChange={e => setLocalConfig({...localConfig, trialDays: parseInt(e.target.value) || 0})}
+                    className="block w-full px-4 py-2 bg-white dark:bg-gray-700 dark:text-gray-200 border border-rose-200 dark:border-gray-600 rounded-lg shadow-sm focus:ring-brand-secondary focus:border-brand-secondary"
+                    min="0"
+                    required
+                />
+                <p className="text-xs text-brand-light-text dark:text-gray-500 mt-1">Este valor será aplicado a todos os NOVOS cadastros realizados a partir de agora.</p>
+            </div>
+            <button 
+                type="submit" 
+                disabled={loading}
+                className="bg-brand-primary hover:bg-rose-700 text-white font-bold py-3 px-8 rounded-lg shadow-lg transition-transform transform hover:scale-105 disabled:bg-rose-300"
+            >
+                {loading ? 'Salvando...' : 'Salvar Configurações'}
+            </button>
+        </form>
+    );
+};
 
 // --- TICKET RESPONSE COMPONENT ---
 const AdminTicketView: React.FC<{ ticket: SupportTicket; adminUser: User; onClose: () => void }> = ({ ticket, adminUser, onClose }) => {
@@ -177,7 +248,6 @@ const UserEditModal: React.FC<{
                  throw new Error("Data inválida.");
             }
             const dateWithTime = new Date(trialDate);
-            // Adjust for timezone offset to prevent date from shifting
             dateWithTime.setMinutes(dateWithTime.getMinutes() + dateWithTime.getTimezoneOffset());
             trialTimestamp = Timestamp.fromDate(dateWithTime);
         } catch (e) {
@@ -242,8 +312,8 @@ const UserEditModal: React.FC<{
 };
 
 
-export const AdminDashboard: React.FC<{ onLogout: () => void; currentUser: User; onGoToApp: () => void; }> = ({ onLogout, currentUser, onGoToApp }) => {
-    const [activeTab, setActiveTab] = useState<'users' | 'support'>('users');
+export const AdminDashboard: React.FC<{ onLogout: () => void; currentUser: User; onGoToApp: () => void; globalConfig: GlobalConfig }> = ({ onLogout, currentUser, onGoToApp, globalConfig }) => {
+    const [activeTab, setActiveTab] = useState<'users' | 'support' | 'config'>('users');
     const [users, setUsers] = useState<User[]>([]);
     const [tickets, setTickets] = useState<SupportTicket[]>([]);
     const [loading, setLoading] = useState(true);
@@ -429,6 +499,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void; currentUser: User;
                     <div className="flex items-center gap-2">
                         <button onClick={() => { setActiveTab('users'); setFilter('all'); setSearchTerm(''); }} className={`px-4 py-2 rounded-lg font-bold transition-colors ${activeTab === 'users' ? 'bg-brand-primary text-white' : 'text-brand-light-text dark:text-gray-400 hover:bg-rose-100'}`}>Usuários</button>
                         <button onClick={() => { setActiveTab('support'); setFilter('open'); setSearchTerm(''); }} className={`px-4 py-2 rounded-lg font-bold transition-colors ${activeTab === 'support' ? 'bg-brand-primary text-white' : 'text-brand-light-text dark:text-gray-400 hover:bg-rose-100'}`}>Suporte</button>
+                        <button onClick={() => { setActiveTab('config'); setSearchTerm(''); }} className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold transition-colors ${activeTab === 'config' ? 'bg-brand-primary text-white' : 'text-brand-light-text dark:text-gray-400 hover:bg-rose-100'}`}><Cog6ToothIcon className="w-5 h-5" /> Config</button>
                         <div className="mx-4 h-6 border-l border-rose-200"></div>
                         <button onClick={onGoToApp} className="flex items-center gap-2 p-2 rounded-lg text-sm font-medium transition-colors text-brand-light-text hover:bg-rose-100"><ArrowUturnLeftIcon className="w-5 h-5"/> App</button>
                         <button onClick={onLogout} className="flex items-center gap-2 p-2 rounded-lg text-sm font-medium transition-colors text-brand-light-text hover:bg-rose-100"><ArrowRightOnRectangleIcon className="w-5 h-5"/> Sair</button>
@@ -437,29 +508,35 @@ export const AdminDashboard: React.FC<{ onLogout: () => void; currentUser: User;
 
                 <main className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700">
                     <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
-                        <h2 className="font-display text-2xl text-brand-text dark:text-rose-100">{activeTab === 'users' ? 'Gestão de Usuários' : 'Chamados de Suporte'}</h2>
-                        <div className="relative">
-                            <input type="search" placeholder="Buscar..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10 pr-4 py-2 w-full sm:w-64 border border-rose-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-gray-200" />
-                            <SearchIcon className="absolute left-3 top-2.5 w-5 h-5 text-gray-400" />
-                        </div>
-                    </div>
-
-                    <div className="flex justify-start flex-wrap gap-2 mb-6 border-b border-rose-100 pb-4">
-                        {activeTab === 'users' ? (
-                            <>
-                                <button onClick={() => setFilter('all')} className={`px-3 py-1 rounded-full text-sm ${filter === 'all' ? 'bg-brand-primary text-white' : 'bg-rose-100 text-brand-light-text'}`}>Todos</button>
-                                <button onClick={() => setFilter('trial')} className={`px-3 py-1 rounded-full text-sm ${filter === 'trial' ? 'bg-brand-primary text-white' : 'bg-rose-100 text-brand-light-text'}`}>Em Teste</button>
-                                <button onClick={() => setFilter('subscribed')} className={`px-3 py-1 rounded-full text-sm ${filter === 'subscribed' ? 'bg-brand-primary text-white' : 'bg-rose-100 text-brand-light-text'}`}>Pagos</button>
-                                <button onClick={() => setFilter('expired')} className={`px-3 py-1 rounded-full text-sm ${filter === 'expired' ? 'bg-brand-primary text-white' : 'bg-rose-100 text-brand-light-text'}`}>Expirados</button>
-                            </>
-                        ) : (
-                            <>
-                                <button onClick={() => setFilter('all')} className={`px-3 py-1 rounded-full text-sm ${filter === 'all' ? 'bg-brand-primary text-white' : 'bg-rose-100 text-brand-light-text'}`}>Todos</button>
-                                <button onClick={() => setFilter('open')} className={`px-3 py-1 rounded-full text-sm ${filter === 'open' ? 'bg-brand-primary text-white' : 'bg-rose-100 text-brand-light-text'}`}>Abertos/Em andamento</button>
-                                <button onClick={() => setFilter('closed')} className={`px-3 py-1 rounded-full text-sm ${filter === 'closed' ? 'bg-brand-primary text-white' : 'bg-rose-100 text-brand-light-text'}`}>Resolvidos</button>
-                            </>
+                        <h2 className="font-display text-2xl text-brand-text dark:text-rose-100">
+                            {activeTab === 'users' ? 'Gestão de Usuários' : activeTab === 'support' ? 'Chamados de Suporte' : 'Configurações Globais'}
+                        </h2>
+                        {activeTab !== 'config' && (
+                            <div className="relative">
+                                <input type="search" placeholder="Buscar..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10 pr-4 py-2 w-full sm:w-64 border border-rose-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-gray-200" />
+                                <SearchIcon className="absolute left-3 top-2.5 w-5 h-5 text-gray-400" />
+                            </div>
                         )}
                     </div>
+
+                    {activeTab !== 'config' && (
+                        <div className="flex justify-start flex-wrap gap-2 mb-6 border-b border-rose-100 pb-4">
+                            {activeTab === 'users' ? (
+                                <>
+                                    <button onClick={() => setFilter('all')} className={`px-3 py-1 rounded-full text-sm ${filter === 'all' ? 'bg-brand-primary text-white' : 'bg-rose-100 text-brand-light-text'}`}>Todos</button>
+                                    <button onClick={() => setFilter('trial')} className={`px-3 py-1 rounded-full text-sm ${filter === 'trial' ? 'bg-brand-primary text-white' : 'bg-rose-100 text-brand-light-text'}`}>Em Teste</button>
+                                    <button onClick={() => setFilter('subscribed')} className={`px-3 py-1 rounded-full text-sm ${filter === 'subscribed' ? 'bg-brand-primary text-white' : 'bg-rose-100 text-brand-light-text'}`}>Pagos</button>
+                                    <button onClick={() => setFilter('expired')} className={`px-3 py-1 rounded-full text-sm ${filter === 'expired' ? 'bg-brand-primary text-white' : 'bg-rose-100 text-brand-light-text'}`}>Expirados</button>
+                                </>
+                            ) : (
+                                <>
+                                    <button onClick={() => setFilter('all')} className={`px-3 py-1 rounded-full text-sm ${filter === 'all' ? 'bg-brand-primary text-white' : 'bg-rose-100 text-brand-light-text'}`}>Todos</button>
+                                    <button onClick={() => setFilter('open')} className={`px-3 py-1 rounded-full text-sm ${filter === 'open' ? 'bg-brand-primary text-white' : 'bg-rose-100 text-brand-light-text'}`}>Abertos/Em andamento</button>
+                                    <button onClick={() => setFilter('closed')} className={`px-3 py-1 rounded-full text-sm ${filter === 'closed' ? 'bg-brand-primary text-white' : 'bg-rose-100 text-brand-light-text'}`}>Resolvidos</button>
+                                </>
+                            )}
+                        </div>
+                    )}
 
                     {activeTab === 'users' ? (
                         <div className="overflow-x-auto">
@@ -500,7 +577,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void; currentUser: User;
                                 </div>
                             )}
                         </div>
-                    ) : (
+                    ) : activeTab === 'support' ? (
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                             <div className="max-h-[600px] overflow-y-auto space-y-3">
                                 {filteredTickets.length === 0 ? <p className="text-center py-10 opacity-50 italic">Nenhum chamado encontrado.</p> : filteredTickets.map(t => (
@@ -523,6 +600,8 @@ export const AdminDashboard: React.FC<{ onLogout: () => void; currentUser: User;
                                 )}
                             </div>
                         </div>
+                    ) : (
+                        <GlobalConfigPanel config={globalConfig} adminUser={currentUser} />
                     )}
                 </main>
             </div>

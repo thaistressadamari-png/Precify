@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import type { Ingredient, Packaging, Recipe, AppSettings, Page, Unit, User } from './types';
+import type { Ingredient, Packaging, Recipe, AppSettings, Page, Unit, User, GlobalConfig } from './types';
 import { IngredientManager } from './components/IngredientManager';
 import { PackagingManager } from './components/PackagingManager';
 import { Settings } from './components/Settings';
@@ -29,7 +29,7 @@ import { ArrowRightOnRectangleIcon } from './components/icons/ArrowRightOnRectan
 import { RegistrationPage } from './components/RegistrationPage';
 import { auth, db } from './components/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc, setDoc, addDoc, collection, updateDoc, Timestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, addDoc, collection, updateDoc, Timestamp, onSnapshot } from 'firebase/firestore';
 import { SubscriptionPage } from './components/SubscriptionPage';
 import { FeedbackModal } from './components/FeedbackModal';
 import { AdminDashboard } from './components/AdminDashboard';
@@ -63,6 +63,11 @@ const App: React.FC = () => {
   const [dataLoading, setDataLoading] = useState(false);
   const initialLoadComplete = useRef(false);
   
+  const [globalConfig, setGlobalConfig] = useState<GlobalConfig>({
+    paymentLink: 'https://pay.kiwify.com.br/4ISfOEL',
+    trialDays: 4
+  });
+
   const userId = activeUser?.id || null;
   
   const [page, setPage] = useState<Page>('dashboard');
@@ -92,6 +97,16 @@ const App: React.FC = () => {
 
   const [isCurrentUserAdmin, setIsCurrentUserAdmin] = useState(false);
   const [isAdminMode, setIsAdminMode] = useState(false);
+
+  // Fetch Global Config
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, "app_config", "global"), (docSnap) => {
+      if (docSnap.exists()) {
+        setGlobalConfig(docSnap.data() as GlobalConfig);
+      }
+    });
+    return () => unsub();
+  }, []);
   
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -132,7 +147,7 @@ const App: React.FC = () => {
               }
             } else {
                trackEvent('sign_up', { method: user.providerData[0]?.providerId || 'email' });
-                const trialEndDate = new Date(Date.now() + 4 * 24 * 60 * 60 * 1000);
+                const trialEndDate = new Date(Date.now() + globalConfig.trialDays * 24 * 60 * 60 * 1000);
                 const trialTimestamp = Timestamp.fromDate(trialEndDate);
                 const newUserDoc = {
                   name: user.displayName || 'Usuário Google',
@@ -163,7 +178,7 @@ const App: React.FC = () => {
       setAuthLoading(false);
     });
     return () => unsubscribe();
-  }, []);
+  }, [globalConfig.trialDays]);
 
   useEffect(() => {
     if (!userId) {
@@ -265,7 +280,6 @@ const App: React.FC = () => {
   const handleStartAddPurchase = (ingredient: Ingredient) => { setIngredientToEdit(ingredient); setIngredientFormMode('addPurchase'); setPage('ingredient-form'); };
   const handleViewIngredientDetails = (ingredient: Ingredient) => { setIngredientToView(ingredient); setPage('ingredient-details'); };
   
-  // Added handleDeleteIngredient to fix missing reference errors.
   const handleDeleteIngredient = (ingredientId: string) => {
     setIngredients(prev => prev.filter(i => i.id !== ingredientId));
     if (ingredientToView?.id === ingredientId) {
@@ -391,13 +405,13 @@ const App: React.FC = () => {
 
   if (!activeUser) {
     if (view === 'landing') return <LandingPage onNavigateToRegister={() => setView('register')} onNavigateToLogin={() => setView('login')} />;
-    if (view === 'register') return <RegistrationPage onRegisterSuccess={setActiveUser} onNavigateToLogin={() => setView('login')} />;
-    return <LoginPage onNavigateToLanding={() => setView('landing')} onNavigateToRegister={() => setView('register')} />;
+    if (view === 'register') return <RegistrationPage onRegisterSuccess={setActiveUser} onNavigateToLogin={() => setView('login')} globalConfig={globalConfig} />;
+    return <LoginPage onNavigateToLanding={() => setView('landing')} onNavigateToRegister={() => setView('register')} globalConfig={globalConfig} />;
   }
 
-  if (isAdminMode) return <AdminDashboard onLogout={handleLogout} currentUser={activeUser} onGoToApp={() => setIsAdminMode(false)} />;
+  if (isAdminMode) return <AdminDashboard onLogout={handleLogout} currentUser={activeUser} onGoToApp={() => setIsAdminMode(false)} globalConfig={globalConfig} />;
 
-  if (showSubscriptionFlow) return <><SubscriptionPage user={activeUser} onPaymentConfirmationClick={handleUserPaymentConfirmation} onLogout={handleLogout} />{showFeedbackModal && <FeedbackModal onSubmit={handleFeedbackSubmit} loading={isSubmittingFeedback} />}</>;
+  if (showSubscriptionFlow) return <><SubscriptionPage user={activeUser} onPaymentConfirmationClick={handleUserPaymentConfirmation} onLogout={handleLogout} globalConfig={globalConfig} />{showFeedbackModal && <FeedbackModal onSubmit={handleFeedbackSubmit} loading={isSubmittingFeedback} />}</>;
 
   if (dataLoading) return <div className="bg-rose-50 dark:bg-gray-900 min-h-screen flex flex-col items-center justify-center"><h1 className="font-display text-4xl font-bold text-brand-primary animate-pulse">Precify</h1><p className="mt-4 text-brand-light-text">Carregando seus dados...</p></div>;
 

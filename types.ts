@@ -2,6 +2,11 @@
 export type Unit = 'g' | 'kg' | 'ml' | 'l' | 'un';
 export type PackagingUnit = 'un' | 'pacote' | 'rolo' | 'm';
 
+export interface GlobalConfig {
+  paymentLink: string;
+  trialDays: number;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -42,7 +47,7 @@ export interface SupportTicket {
 export interface ActionHistory {
   id: string;
   timestamp: any; // Firestore Timestamp
-  actionType: 'ADMIN_STATUS_CHANGE' | 'USER_CONFIRMED_PAYMENT' | 'TICKET_RESPONSE';
+  actionType: 'ADMIN_STATUS_CHANGE' | 'USER_CONFIRMED_PAYMENT' | 'TICKET_RESPONSE' | 'GLOBAL_CONFIG_CHANGE';
   description: string;
   adminId?: string;
   adminName?: string;

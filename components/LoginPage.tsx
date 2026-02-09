@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { ArrowLeftIcon } from './icons/ArrowLeftIcon';
 import { signInWithPopup, signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
@@ -5,13 +6,15 @@ import { auth, googleProvider, db } from './firebase';
 import { doc, getDoc, setDoc, Timestamp } from 'firebase/firestore';
 import { GoogleIcon } from './icons/GoogleIcon';
 import { trackEvent } from './utils';
+import type { GlobalConfig } from '../types';
 
 interface LoginPageProps {
   onNavigateToLanding: () => void;
   onNavigateToRegister: () => void;
+  globalConfig: GlobalConfig;
 }
 
-export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateToLanding, onNavigateToRegister }) => {
+export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateToLanding, onNavigateToRegister, globalConfig }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -30,7 +33,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateToLanding, onNav
 
     try {
         await signInWithEmailAndPassword(auth, email, password);
-        // onAuthStateChanged in App.tsx will handle the rest
     } catch (error: any) {
         setError('E-mail ou senha inválidos. Tente novamente.');
         console.error(error);
@@ -51,7 +53,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateToLanding, onNav
       const userDocSnap = await getDoc(userDocRef);
 
       if (!userDocSnap.exists()) {
-        const trialEndDate = new Date(Date.now() + 4 * 24 * 60 * 60 * 1000); // 4-day free trial
+        const trialEndDate = new Date(Date.now() + (globalConfig.trialDays || 4) * 24 * 60 * 60 * 1000);
         const trialTimestamp = Timestamp.fromDate(trialEndDate);
         await setDoc(userDocRef, {
           name: user.displayName || 'Usuário Google',
@@ -94,7 +96,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateToLanding, onNav
 
   return (
     <div className="bg-rose-50 dark:bg-gray-900 min-h-screen flex items-center justify-center p-4 font-sans animate-fade-in">
-      <div className="w-full max-w-sm mx-auto">
+      <div className="w-full max-sm mx-auto">
         <div className="text-center mb-8">
             <h1 className="font-display text-6xl font-bold text-brand-primary">Precify</h1>
             <p className="text-brand-light-text dark:text-gray-400 mt-2">Sua confeitaria sob controle.</p>

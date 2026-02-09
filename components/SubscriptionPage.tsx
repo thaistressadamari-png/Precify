@@ -1,15 +1,17 @@
+
 import React from 'react';
 import { ArrowRightOnRectangleIcon } from './icons/ArrowRightOnRectangleIcon';
 import { CalculatorIcon } from './icons/CalculatorIcon';
 import { ClipboardListIcon } from './icons/ClipboardListIcon';
 import { ChartBarIcon } from './icons/ChartBarIcon';
 import { DocumentArrowDownIcon } from './icons/DocumentArrowDownIcon';
-import { User } from '../types';
+import { User, GlobalConfig } from '../types';
 
 interface SubscriptionPageProps {
   user: User;
   onPaymentConfirmationClick: () => void;
   onLogout: () => void;
+  globalConfig: GlobalConfig;
 }
 
 const Feature: React.FC<{ icon: React.ElementType, title: string, children: React.ReactNode }> = ({ icon: Icon, title, children }) => (
@@ -24,7 +26,7 @@ const Feature: React.FC<{ icon: React.ElementType, title: string, children: Reac
     </div>
 );
 
-export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({ user, onPaymentConfirmationClick, onLogout }) => {
+export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({ user, onPaymentConfirmationClick, onLogout, globalConfig }) => {
   const userName = user.name.split(' ')[0];
   
   return (
@@ -68,7 +70,7 @@ export const SubscriptionPage: React.FC<SubscriptionPageProps> = ({ user, onPaym
             </div>
             
             <a 
-              href="https://pay.kiwify.com.br/4ISfOEL"
+              href={globalConfig.paymentLink || "https://pay.kiwify.com.br/4ISfOEL"}
               target="_blank"
               rel="noopener noreferrer"
               className="mt-8 inline-block w-full max-w-sm bg-brand-primary hover:bg-rose-700 text-white font-bold py-4 px-8 rounded-lg shadow-lg transition-transform transform hover:scale-105 text-lg"
