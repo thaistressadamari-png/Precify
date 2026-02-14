@@ -96,7 +96,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onNavigateToLanding, onNav
 
   return (
     <div className="bg-rose-50 dark:bg-gray-900 min-h-screen flex items-center justify-center p-4 font-sans animate-fade-in">
-      <div className="w-full max-sm mx-auto">
+      <div className="w-full max-w-md mx-auto">
         <div className="text-center mb-8">
             <h1 className="font-display text-6xl font-bold text-brand-primary">Precify</h1>
             <p className="text-brand-light-text dark:text-gray-400 mt-2">Sua confeitaria sob controle.</p>
