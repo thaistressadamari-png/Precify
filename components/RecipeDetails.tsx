@@ -373,7 +373,7 @@ export const RecipeDetails: React.FC<RecipeDetailsProps> = ({ recipe, ingredient
                         <span className="font-mono font-semibold text-brand-text dark:text-gray-200">{formatCurrency(costBreakdown.baseCost)}</span>
                     </li>
                     <li className="flex justify-between items-center">
-                        <span className="text-brand-light-text dark:text-gray-400">(+) Impostos ({settings.taxPercentage}%)</span>
+                        <span className="text-brand-light-text dark:text-gray-400">(+) Impostos ({recipe.taxPercentage !== undefined ? recipe.taxPercentage : settings.taxPercentage}%)</span>
                         <span className="font-mono font-semibold text-brand-text dark:text-gray-200">{formatCurrency(costBreakdown.taxValue)}</span>
                     </li>
                     <li className="flex justify-between items-center">

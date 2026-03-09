@@ -119,6 +119,7 @@ export interface Recipe {
   gasUsageMinutes: number;
   variableCostsPercentage?: number;
   profitMargin?: number;
+  taxPercentage?: number;
   evaporationPercentage: number;
   preparationMethod?: string[];
   observationsTitle?: string;

@@ -59,7 +59,7 @@ export const calculateCosts = (
 
     // --- Calculations for 'recipe' type ---
     if (type === 'recipe') {
-        const taxRate = (settings.taxPercentage || 0) / 100; // t
+        const taxRate = (recipe.taxPercentage !== undefined ? recipe.taxPercentage : (settings.taxPercentage || 0)) / 100; // t
         const variableCostsRate = (recipe.variableCostsPercentage || 0) / 100; // v
         const profitMarginRate = (recipe.profitMargin || 0) / 100; // m_c (markup on cost)
 

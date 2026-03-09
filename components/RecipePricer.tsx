@@ -43,6 +43,7 @@ const createEmptyRecipe = (): Omit<Recipe, 'id'>=> ({
   evaporationPercentage: 0,
   variableCostsPercentage: 10,
   profitMargin: 30,
+  taxPercentage: undefined,
   preparationMethod: [''],
   observationsTitle: 'Observações',
   observations: [''],
@@ -212,6 +213,9 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
       if (initialData.profitMargin === undefined) {
           initialData.profitMargin = 30;
       }
+      if (initialData.taxPercentage === undefined) {
+          initialData.taxPercentage = settings.taxPercentage;
+      }
       if (!initialData.preparationMethod || initialData.preparationMethod.length === 0) {
           initialData.preparationMethod = [''];
       }
@@ -255,7 +259,7 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    const isNumber = ['yieldAmount', 'evaporationPercentage', 'variableCostsPercentage', 'profitMargin'].includes(name);
+    const isNumber = ['yieldAmount', 'evaporationPercentage', 'variableCostsPercentage', 'profitMargin', 'taxPercentage'].includes(name);
     
     setRecipe(prev => ({ ...prev, [name]: isNumber ? safeParseFloat(value) : value } as any));
   };
@@ -784,6 +788,11 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
                             <label className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Custos Variáveis (%)</label>
                             <input type="number" name="variableCostsPercentage" value={recipe.variableCostsPercentage || ''} onChange={handleInputChange} className={inputFieldClasses} placeholder="10" min="0" step="any" />
                             <p className="text-xs text-brand-light-text dark:text-gray-500 mt-1">Soma das taxas percentuais (ex: cartão, delivery) que incidem sobre o PREÇO DE VENDA FINAL.</p>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Imposto (%)</label>
+                            <input type="number" name="taxPercentage" value={recipe.taxPercentage ?? ''} onChange={handleInputChange} className={inputFieldClasses} placeholder="8" min="0" step="any" />
+                            <p className="text-xs text-brand-light-text dark:text-gray-500 mt-1">Alíquota de imposto que incide sobre o PREÇO DE VENDA FINAL.</p>
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Lucro Desejado (%)</label>
