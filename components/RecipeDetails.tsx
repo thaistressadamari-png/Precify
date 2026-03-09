@@ -278,7 +278,14 @@ export const RecipeDetails: React.FC<RecipeDetailsProps> = ({ recipe, ingredient
     <div className="animate-fade-in space-y-8">
       <div className="flex justify-between items-center flex-wrap gap-4">
         <div>
-            <h1 className="font-display text-4xl text-brand-text dark:text-rose-100">{recipe.name}</h1>
+            <div className="flex items-center gap-2 mb-1">
+                <h1 className="font-display text-4xl text-brand-text dark:text-rose-100">{recipe.name}</h1>
+                {recipe.category && (
+                    <span className="px-3 py-1 bg-rose-100 dark:bg-gray-700 text-brand-primary dark:text-rose-200 text-xs font-bold rounded-full uppercase tracking-wider">
+                        {recipe.category}
+                    </span>
+                )}
+            </div>
             <p className="text-brand-light-text dark:text-gray-400">Rendimento Bruto: {recipe.yieldAmount} {recipe.yieldUnit}</p>
         </div>
         <div className="flex gap-2 flex-wrap">

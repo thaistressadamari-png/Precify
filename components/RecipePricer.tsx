@@ -565,6 +565,10 @@ export const RecipePricer: React.FC<RecipePricerProps> = ({ ingredients, packagi
                         <label htmlFor="name" className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Nome</label>
                         <input type="text" name="name" id="name" value={recipe.name} onChange={handleInputChange} className={inputFieldClasses} placeholder="Bolo de Chocolate"/>
                     </div>
+                    <div>
+                        <label htmlFor="category" className="block text-sm font-medium text-brand-light-text dark:text-gray-400">Categoria (Ex: Páscoa, Natal)</label>
+                        <input type="text" name="category" id="category" value={recipe.category || ''} onChange={handleInputChange} className={inputFieldClasses} placeholder="Páscoa"/>
+                    </div>
                     {type === 'recipe' ? (
                         <div className="flex gap-2">
                             <div className="flex-grow">

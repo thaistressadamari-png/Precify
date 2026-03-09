@@ -114,6 +114,7 @@ export interface Recipe {
   packaging: RecipePackaging[];
   yieldAmount: number;
   yieldUnit: string;
+  category?: string;
   laborMinutes: number;
   energyUsageMinutes: number;
   gasUsageMinutes: number;
