@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import type { Ingredient, Packaging, InvoiceReceipt, InvoicePurchaseItem, Unit, PackagingUnit } from '../types';
 import { CameraIcon } from './icons/CameraIcon';
 import { QrCodeIcon } from './icons/QrCodeIcon';
@@ -51,6 +51,47 @@ export const PurchasesManager: React.FC<PurchasesManagerProps> = ({
   const [selectedMonth, setSelectedMonth] = useState<string>('all');
   const [selectedSupplier, setSelectedSupplier] = useState<string>('all');
 
+  // Date period filter state in exact requested order: "hoje, ontem, esse mês e personalizado" (default: "esse mês")
+  type PeriodFilter = 'hoje' | 'ontem' | 'this_month' | 'custom';
+  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('this_month');
+  const [isPeriodDropdownOpen, setIsPeriodDropdownOpen] = useState(false);
+  const periodDropdownRef = useRef<HTMLDivElement | null>(null);
+
+  const PERIOD_OPTIONS: { key: PeriodFilter; label: string }[] = [
+    { key: 'hoje', label: 'Hoje' },
+    { key: 'ontem', label: 'Ontem' },
+    { key: 'this_month', label: 'Esse Mês' },
+    { key: 'custom', label: 'Personalizado' },
+  ];
+
+  // Close period dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (periodDropdownRef.current && !periodDropdownRef.current.contains(event.target as Node)) {
+        setIsPeriodDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Format date helper YYYY-MM-DD
+  const formatYMD = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
+  const [customStartDate, setCustomStartDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(1);
+    return formatYMD(d);
+  });
+  const [customEndDate, setCustomEndDate] = useState<string>(() => {
+    return formatYMD(new Date());
+  });
+
   // Modals state
   const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
@@ -92,19 +133,107 @@ export const PurchasesManager: React.FC<PurchasesManagerProps> = ({
     return monthsMap;
   }, [receipts]);
 
-  // Current month and previous month values
-  const currentMonthTotal = monthlyStats[currentMonthKey]?.total || 0;
-  const currentMonthItemsCount = monthlyStats[currentMonthKey]?.itemsCount || 0;
-  const currentMonthReceiptsCount = monthlyStats[currentMonthKey]?.count || 0;
-
   // Previous month calculation
   const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const prevMonthKey = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
-  const prevMonthTotal = monthlyStats[prevMonthKey]?.total || 0;
 
-  const monthGrowthPercent = prevMonthTotal > 0 
-    ? ((currentMonthTotal - prevMonthTotal) / prevMonthTotal) * 100 
-    : 0;
+  // Calculate stats for the selected period filter ("hoje", "ontem", "esse mês", "personalizado")
+  const periodStats = useMemo(() => {
+    const today = new Date();
+    const todayStr = formatYMD(today);
+
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = formatYMD(yesterday);
+
+    const firstDayThisMonth = formatYMD(new Date(today.getFullYear(), today.getMonth(), 1));
+    const lastDayThisMonth = formatYMD(new Date(today.getFullYear(), today.getMonth() + 1, 0));
+
+    let start = firstDayThisMonth;
+    let end = lastDayThisMonth;
+    let title = 'Compras no Mês';
+    let itemsTitle = 'Insumos no Mês';
+    let comparisonLabel = 'vs mês anterior';
+    let prevPeriodTotal = 0;
+
+    if (periodFilter === 'hoje') {
+      start = todayStr;
+      end = todayStr;
+      title = 'Compras de Hoje';
+      itemsTitle = 'Insumos de Hoje';
+      comparisonLabel = 'vs ontem';
+      prevPeriodTotal = receipts
+        .filter(r => r.date && r.date.startsWith(yesterdayStr))
+        .reduce((sum, r) => sum + (r.totalAmount || 0), 0);
+    } else if (periodFilter === 'ontem') {
+      start = yesterdayStr;
+      end = yesterdayStr;
+      title = 'Compras de Ontem';
+      itemsTitle = 'Insumos de Ontem';
+      comparisonLabel = 'no dia';
+      const dayBeforeYesterday = new Date(today);
+      dayBeforeYesterday.setDate(dayBeforeYesterday.getDate() - 2);
+      const dayBeforeYesterdayStr = formatYMD(dayBeforeYesterday);
+      prevPeriodTotal = receipts
+        .filter(r => r.date && r.date.startsWith(dayBeforeYesterdayStr))
+        .reduce((sum, r) => sum + (r.totalAmount || 0), 0);
+    } else if (periodFilter === 'custom') {
+      start = customStartDate || firstDayThisMonth;
+      end = customEndDate || todayStr;
+      title = 'Compras no Período';
+      itemsTitle = 'Insumos no Período';
+      comparisonLabel = 'período personalizado';
+      prevPeriodTotal = 0;
+    } else {
+      // this_month (padrão)
+      start = firstDayThisMonth;
+      end = lastDayThisMonth;
+      title = 'Compras no Mês';
+      itemsTitle = 'Insumos no Mês';
+      comparisonLabel = 'vs mês anterior';
+      prevPeriodTotal = monthlyStats[prevMonthKey]?.total || 0;
+    }
+
+    const matchingReceipts = receipts.filter(r => {
+      if (!r.date) return false;
+      const dStr = r.date.substring(0, 10);
+      return dStr >= start && dStr <= end;
+    });
+
+    const total = matchingReceipts.reduce((sum, r) => sum + (r.totalAmount || 0), 0);
+    const receiptsCount = matchingReceipts.length;
+    let itemsCount = 0;
+    let ingredientCount = 0;
+    let packagingCount = 0;
+
+    matchingReceipts.forEach(r => {
+      itemsCount += r.items.length;
+      r.items.forEach(item => {
+        if (item.category === 'packaging') {
+          packagingCount += item.quantity || 1;
+        } else if (item.category === 'ingredient') {
+          ingredientCount += item.quantity || 1;
+        }
+      });
+    });
+
+    const growthPercent = prevPeriodTotal > 0 ? ((total - prevPeriodTotal) / prevPeriodTotal) * 100 : 0;
+
+    return {
+      start,
+      end,
+      title,
+      itemsTitle,
+      comparisonLabel,
+      total,
+      receiptsCount,
+      itemsCount,
+      ingredientCount,
+      packagingCount,
+      prevPeriodTotal,
+      growthPercent
+    };
+  }, [receipts, periodFilter, customStartDate, customEndDate, monthlyStats, prevMonthKey]);
 
   // Total all-time stats
   const totalAllTime = useMemo(() => {
@@ -416,42 +545,114 @@ export const PurchasesManager: React.FC<PurchasesManagerProps> = ({
 
       {/* Dashboard KPI Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        {/* Card 1: Compras no Mês */}
+        {/* Card 1: Compras no Mês / Período with compact Tag Dropdown */}
         <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700 flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-brand-light-text dark:text-gray-400">
-              Compras no Mês
-            </span>
-            <div className="p-2.5 bg-brand-primary/10 text-brand-primary rounded-xl">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-bold uppercase tracking-wider text-brand-light-text dark:text-gray-400">
+                {periodStats.title}
+              </span>
+
+              {/* Tag / Botão com Menu Pendente */}
+              <div className="relative inline-block" ref={periodDropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsPeriodDropdownOpen((prev) => !prev)}
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-semibold rounded-full bg-rose-50 hover:bg-rose-100 dark:bg-gray-700 dark:hover:bg-gray-600 text-brand-primary dark:text-rose-300 transition border border-rose-200/70 dark:border-gray-600 shadow-xs"
+                  title="Alterar período"
+                >
+                  <span>{PERIOD_OPTIONS.find((p) => p.key === periodFilter)?.label || 'Esse Mês'}</span>
+                  <svg
+                    className={`w-3 h-3 transition-transform duration-200 ${isPeriodDropdownOpen ? 'rotate-180' : ''}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+
+                {/* Dropdown Menu */}
+                {isPeriodDropdownOpen && (
+                  <div className="absolute left-0 mt-1.5 w-36 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-rose-100 dark:border-gray-700 py-1 z-30 animate-fade-in">
+                    {PERIOD_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        onClick={() => {
+                          setPeriodFilter(opt.key);
+                          setIsPeriodDropdownOpen(false);
+                        }}
+                        className={`w-full text-left px-3 py-1.5 text-xs font-medium transition flex items-center justify-between ${
+                          periodFilter === opt.key
+                            ? 'bg-rose-50 dark:bg-gray-700/80 text-brand-primary dark:text-rose-300 font-bold'
+                            : 'text-brand-text dark:text-gray-200 hover:bg-rose-50/60 dark:hover:bg-gray-700/50'
+                        }`}
+                      >
+                        <span>{opt.label}</span>
+                        {periodFilter === opt.key && <span className="text-brand-primary text-xs font-bold">✓</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="p-2.5 bg-brand-primary/10 text-brand-primary rounded-xl flex-shrink-0">
               <ShoppingBagIcon className="w-5 h-5" />
             </div>
           </div>
+
           <div className="mt-4">
             <p className="text-3xl font-bold text-brand-text dark:text-white">
-              {formatCurrency(currentMonthTotal)}
+              {formatCurrency(periodStats.total)}
             </p>
             <div className="flex items-center gap-1.5 mt-1 text-xs">
-              {prevMonthTotal > 0 ? (
+              {periodStats.prevPeriodTotal > 0 ? (
                 <span
                   className={`font-semibold ${
-                    monthGrowthPercent <= 0 ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'
+                    periodStats.growthPercent <= 0 ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'
                   }`}
                 >
-                  {monthGrowthPercent > 0 ? `+${monthGrowthPercent.toFixed(1)}%` : `${monthGrowthPercent.toFixed(1)}%`}
+                  {periodStats.growthPercent > 0 ? `+${periodStats.growthPercent.toFixed(1)}%` : `${periodStats.growthPercent.toFixed(1)}%`}
                 </span>
               ) : (
-                <span className="text-gray-400">Mês base</span>
+                <span className="text-gray-400">
+                  {periodFilter === 'custom'
+                    ? `${periodStats.receiptsCount} nota(s)`
+                    : 'Período atual'}
+                </span>
               )}
-              <span className="text-brand-light-text dark:text-gray-400">vs mês anterior</span>
+              <span className="text-brand-light-text dark:text-gray-400">{periodStats.comparisonLabel}</span>
             </div>
+
+            {/* If custom period is active, display compact date inputs inside card */}
+            {periodFilter === 'custom' && (
+              <div className="mt-3 pt-2.5 border-t border-rose-100 dark:border-gray-700 flex flex-wrap items-center gap-1.5 text-[11px] animate-fade-in">
+                <span className="text-brand-light-text dark:text-gray-400 font-medium">De:</span>
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  className="px-2 py-0.5 bg-rose-50 dark:bg-gray-700 border border-rose-200 dark:border-gray-600 rounded-md text-brand-text dark:text-gray-200 outline-none text-[11px] focus:ring-1 focus:ring-brand-primary"
+                />
+                <span className="text-brand-light-text dark:text-gray-400 font-medium">Até:</span>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  className="px-2 py-0.5 bg-rose-50 dark:bg-gray-700 border border-rose-200 dark:border-gray-600 rounded-lg text-brand-text dark:text-gray-200 outline-none text-[11px] focus:ring-1 focus:ring-brand-primary"
+                />
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Card 2: Insumos Comprados */}
+        {/* Card 2: Insumos Comprados no Período */}
         <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700 flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-brand-light-text dark:text-gray-400">
-              Insumos no Mês
+              {periodStats.itemsTitle}
             </span>
             <div className="p-2.5 bg-purple-500/10 text-purple-600 dark:text-purple-400 rounded-xl">
               <BoxIcon className="w-5 h-5" />
@@ -459,10 +660,10 @@ export const PurchasesManager: React.FC<PurchasesManagerProps> = ({
           </div>
           <div className="mt-4">
             <p className="text-3xl font-bold text-brand-text dark:text-white">
-              {currentMonthItemsCount}
+              {periodStats.itemsCount}
             </p>
             <p className="text-xs text-brand-light-text dark:text-gray-400 mt-1">
-              produtos adquiridos em {currentMonthReceiptsCount} notas
+              produtos adquiridos em {periodStats.receiptsCount} nota{periodStats.receiptsCount !== 1 ? 's' : ''}
             </p>
           </div>
         </div>
@@ -521,22 +722,26 @@ export const PurchasesManager: React.FC<PurchasesManagerProps> = ({
               <span className="text-xs text-brand-light-text dark:text-gray-400">Valores em R$</span>
             </div>
 
-            {/* Custom Tailwind Bar Chart */}
+            {/* Custom Tailwind Bar Chart with Values on Top of Bars */}
             <div className="w-full overflow-x-auto no-scrollbar pb-1">
-              <div className="h-44 sm:h-48 min-w-[280px] w-full flex items-end justify-between gap-2 sm:gap-3 pt-4 pb-2 px-1 border-b border-rose-100 dark:border-gray-700">
+              <div className="h-48 sm:h-52 min-w-[300px] w-full flex items-end justify-between gap-2 sm:gap-3 pt-6 pb-2 px-1 border-b border-rose-100 dark:border-gray-700">
                 {last6Months.map((m) => {
                   const heightPercent = maxMonthValue > 0 ? (m.total / maxMonthValue) * 100 : 0;
                   const isCurrent = m.key === currentMonthKey;
 
                   return (
-                    <div key={m.key} className="flex-1 min-w-0 flex flex-col items-center gap-1.5 group h-full justify-end">
-                      {/* Tooltip on hover */}
-                      <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-gray-900 text-white text-[10px] py-0.5 px-1.5 rounded font-bold whitespace-nowrap shadow-lg pointer-events-none mb-1">
+                    <div key={m.key} className="flex-1 min-w-0 flex flex-col items-center justify-end h-full group">
+                      {/* Value displayed on top of the chart bar */}
+                      <span
+                        className={`text-[10px] sm:text-[11px] font-bold text-center whitespace-nowrap mb-1.5 transition-colors ${
+                          isCurrent ? 'text-brand-primary' : 'text-brand-text dark:text-gray-300'
+                        }`}
+                      >
                         {formatCurrency(m.total)}
-                      </div>
+                      </span>
 
                       {/* Bar */}
-                      <div className="w-full max-w-[42px] bg-rose-100 dark:bg-gray-700 rounded-t-lg overflow-hidden h-full flex items-end">
+                      <div className="w-full max-w-[44px] bg-rose-100 dark:bg-gray-700 rounded-t-lg overflow-hidden h-28 sm:h-32 flex items-end">
                         <div
                           style={{ height: `${Math.max(heightPercent, 4)}%` }}
                           className={`w-full rounded-t-lg transition-all duration-500 ${
@@ -549,7 +754,7 @@ export const PurchasesManager: React.FC<PurchasesManagerProps> = ({
 
                       {/* X-axis label */}
                       <span
-                        className={`text-[10px] sm:text-[11px] font-semibold uppercase truncate text-center w-full ${
+                        className={`text-[10px] sm:text-[11px] font-semibold uppercase truncate text-center w-full mt-1.5 ${
                           isCurrent ? 'text-brand-primary font-bold' : 'text-gray-400'
                         }`}
                       >

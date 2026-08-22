@@ -22,7 +22,7 @@ export const CameraReceiptModal: React.FC<CameraReceiptModalProps> = ({
   onCapturePhoto,
   onParsedReceipt
 }) => {
-  const [mode, setMode] = useState<'qrcode' | 'photo' | 'manualKey' | 'pasteText'>('photo');
+  const [mode, setMode] = useState<'qrcode' | 'pasteText' | 'manualKey'>('qrcode');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
@@ -356,9 +356,7 @@ export const CameraReceiptModal: React.FC<CameraReceiptModalProps> = ({
         >
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-brand-primary text-white rounded-2xl shadow-md shadow-rose-500/20">
-              {mode === 'photo' ? (
-                <CameraIcon className="w-5 h-5" />
-              ) : mode === 'qrcode' ? (
+              {mode === 'qrcode' ? (
                 <QrCodeIcon className="w-5 h-5" />
               ) : mode === 'pasteText' ? (
                 <span className="font-bold text-sm">📋</span>
@@ -368,18 +366,14 @@ export const CameraReceiptModal: React.FC<CameraReceiptModalProps> = ({
             </div>
             <div>
               <h2 className="font-display text-lg sm:text-xl font-bold text-brand-text dark:text-rose-100">
-                {mode === 'photo'
-                  ? 'Fotografar Cupom Fiscal'
-                  : mode === 'qrcode'
+                {mode === 'qrcode'
                   ? 'Scanner de QR Code'
                   : mode === 'pasteText'
                   ? 'Colar Texto da Consulta SEFAZ'
                   : 'Chave de Acesso da Nota'}
               </h2>
               <p className="text-xs text-brand-light-text dark:text-gray-400">
-                {mode === 'photo'
-                  ? 'Enquadre os produtos do cupom para extração com IA'
-                  : mode === 'qrcode'
+                {mode === 'qrcode'
                   ? 'Aponte a câmera para o QR Code da nota fiscal'
                   : mode === 'pasteText'
                   ? 'Cole o texto copiado da página do governo / SEFAZ'
@@ -398,20 +392,8 @@ export const CameraReceiptModal: React.FC<CameraReceiptModalProps> = ({
           </button>
         </div>
 
-        {/* Mode Selector (4 streamlined options) */}
-        <div className="grid grid-cols-4 bg-rose-50 dark:bg-gray-900/60 p-1 mx-3 sm:mx-4 mt-3 rounded-2xl border border-rose-100 dark:border-gray-700 gap-1 text-[11px] sm:text-xs">
-          <button
-            type="button"
-            onClick={() => setMode('photo')}
-            className={`py-2 px-1 rounded-xl font-bold flex items-center justify-center gap-1 transition ${
-              mode === 'photo'
-                ? 'bg-brand-primary text-white shadow-md'
-                : 'text-brand-light-text dark:text-gray-400 hover:text-brand-text'
-            }`}
-          >
-            <CameraIcon className="w-3.5 h-3.5 flex-shrink-0" />
-            <span className="truncate">Foto</span>
-          </button>
+        {/* Mode Selector (3 options: QR Code, Colar Texto, Chave) */}
+        <div className="grid grid-cols-3 bg-rose-50 dark:bg-gray-900/60 p-1 mx-3 sm:mx-4 mt-3 rounded-2xl border border-rose-100 dark:border-gray-700 gap-1 text-[11px] sm:text-xs">
           <button
             type="button"
             onClick={() => setMode('qrcode')}
@@ -654,18 +636,6 @@ export const CameraReceiptModal: React.FC<CameraReceiptModalProps> = ({
 
           {/* Action Trigger */}
           <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-            {mode === 'photo' && (
-              <button
-                type="button"
-                onClick={handleTakeSnapshot}
-                disabled={!isStreaming}
-                className="flex-1 sm:flex-initial py-3 px-6 bg-brand-primary hover:bg-rose-600 text-white font-bold rounded-2xl shadow-lg shadow-rose-500/30 transition flex items-center justify-center gap-2 text-sm disabled:opacity-50"
-              >
-                <CameraIcon className="w-5 h-5" />
-                <span>Fotografar e Ler com IA</span>
-              </button>
-            )}
-
             <button
               type="button"
               onClick={() => {
