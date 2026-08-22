@@ -1,4 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
+import jsQR from 'jsqr';
 import type { Ingredient, Packaging, InvoiceReceipt, InvoicePurchaseItem, Unit, PackagingUnit } from '../types';
 
 export interface ParsedReceiptData {
@@ -36,6 +36,48 @@ export const fileToBase64 = (file: File): Promise<string> => {
   });
 };
 
+// Scan QR code from an image or file using jsQR on a canvas
+export const scanQrFromImage = async (imageFileOrBase64: File | string): Promise<string | null> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'Anonymous';
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(null);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(imageData.data, imageData.width, imageData.height, {
+          inversionAttempts: 'attemptBoth'
+        });
+        if (code && code.data) {
+          resolve(code.data);
+        } else {
+          resolve(null);
+        }
+      } catch (err) {
+        console.warn('Erro ao decodificar QR na imagem:', err);
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+
+    if (typeof imageFileOrBase64 === 'string') {
+      img.src = imageFileOrBase64.startsWith('data:') 
+        ? imageFileOrBase64 
+        : `data:image/jpeg;base64,${imageFileOrBase64}`;
+    } else {
+      img.src = URL.createObjectURL(imageFileOrBase64);
+    }
+  });
+};
+
 // Heuristic to detect if a product name is likely packaging vs ingredient
 export const guessCategory = (name: string): 'ingredient' | 'packaging' => {
   const lower = name.toLowerCase();
@@ -48,7 +90,13 @@ export const guessCategory = (name: string): 'ingredient' | 'packaging' => {
 };
 
 // Smart unit and package amount extractor (e.g. "NATA FRIMESA 300G" -> 300g, "LEITE CONDENSADO 395G" -> 395g)
-export const guessPackageSpecs = (name: string, rawUnit: string, quantity: number, unitPrice: number, totalPrice: number): { amount: number; unit: Unit | PackagingUnit; price: number } => {
+export const guessPackageSpecs = (
+  name: string,
+  rawUnit: string,
+  quantity: number,
+  unitPrice: number,
+  totalPrice: number
+): { amount: number; unit: Unit | PackagingUnit; price: number } => {
   const lower = name.toLowerCase();
   const normalizedRawUnit = (rawUnit || '').trim().toLowerCase();
 
@@ -60,7 +108,6 @@ export const guessPackageSpecs = (name: string, rawUnit: string, quantity: numbe
   const unMatch = lower.match(/(\d+)\s*(un|und|unid|unidades|pecas?|peças?)\b/);
 
   if (normalizedRawUnit === 'kg') {
-    // If unit is kg and quantity is e.g. 0.895 kg, we can store either as 1 kg at unit price or 0.895 kg
     return {
       amount: quantity > 0 ? quantity : 1,
       unit: 'kg',
@@ -157,7 +204,13 @@ export const parseNfceQrCode = (qrCodeString: string): Partial<ParsedReceiptData
   };
 
   // Check for 44-digit access key inside URL or text
-  const accessKeyMatch = qrCodeString.match(/\b\d{44}\b/) || qrCodeString.match(/p=(\d{44})/i) || qrCodeString.match(/chNFe=(\d{44})/i);
+  const accessKeyMatch = qrCodeString.match(/\b\d{44}\b/) || 
+                         qrCodeString.match(/[?&]p=([0-9]{44})/i) || 
+                         qrCodeString.match(/p=([0-9]{44})/i) || 
+                         qrCodeString.match(/[?&]chNFe=([0-9]{44})/i) ||
+                         qrCodeString.match(/chNFe=([0-9]{44})/i) ||
+                         qrCodeString.match(/[?&]chave=([0-9]{44})/i);
+
   if (accessKeyMatch) {
     result.accessKey = accessKeyMatch[1] || accessKeyMatch[0];
     
@@ -182,6 +235,13 @@ export const parseNfceQrCode = (qrCodeString: string): Partial<ParsedReceiptData
     if (!isNaN(possibleTotal) && possibleTotal > 0) {
       result.totalAmount = possibleTotal;
     }
+  }
+
+  // Check query parameter total (ex: &vNF=24.04 or &total=24.04)
+  const vnfMatch = qrCodeString.match(/[?&](?:vNF|total|valor)=([0-9.,]+)/i);
+  if (vnfMatch && !result.totalAmount) {
+    const vnf = parseFloat(vnfMatch[1].replace(',', '.'));
+    if (!isNaN(vnf)) result.totalAmount = vnf;
   }
 
   result.supplier = "Cupom Fiscal NFC-e (Lido via QR Code)";
@@ -270,103 +330,32 @@ export const parseNfeXml = (xmlText: string): ParsedReceiptData => {
   };
 };
 
-// Parse Receipt Photo / Document using Gemini Vision API
+// Parse Receipt Photo / Document using Server-Side Gemini API Proxy (/api/parse-receipt)
 export const parseReceiptImageWithGemini = async (imageBase64: string, mimeType: string = 'image/jpeg'): Promise<ParsedReceiptData> => {
-  const apiKey = process.env.GEMINI_API_KEY || (process.env as any).API_KEY || '';
-  if (!apiKey) {
-    throw new Error("Chave de API Gemini não configurada.");
-  }
-
-  const ai = new GoogleGenAI({ apiKey });
-
-  const prompt = `Você é um especialista em leitura e extração de dados de Cupons Fiscais (NFC-e, NF-e, SAT, CF-e) de supermercados, atacados e lojas do Brasil (exemplo: Cavicchiolli, Atacadão, Assaí, Carrefour, Pão de Açúcar, etc.).
-Analise a imagem da nota fiscal/cupom fiscal fornecida com extrema precisão e extraia todos os itens e metadados no formato JSON.
-
-Regras de Extração:
-1. Extraia o nome do estabelecimento/supermercado (supplier).
-2. Extraia o CNPJ, se visível.
-3. Extraia a data da compra no formato "YYYY-MM-DD" (se tiver hora, use apenas a data).
-4. Extraia a Chave de Acesso (44 dígitos numéricos) se estiver impressa ou próxima ao QR Code.
-5. Extraia o Número do cupom (NFC-e ou Controle) e Série se houver.
-6. Extraia o Valor Total pago (totalAmount em número float, ex: 24.04).
-7. Extraia a Forma de Pagamento (ex: "Cartão de Crédito", "Cartão de Débito", "Dinheiro", "Pix").
-8. Extraia cada item da compra:
-   - rawName: descrição exata do item (ex: "BANANA NANICA KG", "NATA FRIMESA 300G", "LEITE CONDENSADO MOCA 395G").
-   - code: código do produto ou código de barras se houver.
-   - quantity: quantidade comprada como float (ex: 0.895 para kg, 1 para unidade, 3 para 3 pacotes).
-   - unit: unidade que está impressa na nota (ex: "Kg", "Un", "g", "L", "Cx", "Pct").
-   - unitPrice: valor unitário impresso (ex: 7.88 ou 16.99).
-   - totalPrice: valor total do item (ex: 7.05 ou 16.99).
-   - category: classifique se é 'ingredient' (alimento, fruta, laticínio, farinha, açúcar, fermento, chocolate, etc.) ou 'packaging' (embalagem, caixa, forma, fita, copo, saco, prato, etc.).
-   - suggestedPackageAmount: tamanho da embalagem ou quantidade líquida em número (ex: para "NATA FRIMESA 300G" é 300; para "LEITE COND 395G" é 395; para 0.895 Kg é 0.895 ou 895; para 1 Un é 1).
-   - suggestedUnit: 'g' | 'kg' | 'ml' | 'l' | 'un' | 'pacote' | 'rolo' | 'm'.
-
-Retorne ESTRITAMENTE um objeto JSON válido no seguinte formato (sem formatações de markdown adicionais além do json):
-{
-  "supplier": "Supermercados Cavicchiolli Ltda",
-  "cnpj": "43.259.548/0027-00",
-  "date": "2026-08-14",
-  "accessKey": "352608432595480027006521100012155711609434",
-  "nfcNumber": "121557",
-  "series": "211",
-  "totalAmount": 24.04,
-  "paymentMethod": "Cartão de Crédito",
-  "items": [
-    {
-      "rawName": "BANANA NANICA KG",
-      "code": "000000002117",
-      "quantity": 0.895,
-      "unit": "Kg",
-      "unitPrice": 7.88,
-      "totalPrice": 7.05,
-      "category": "ingredient",
-      "suggestedPackageAmount": 0.895,
-      "suggestedUnit": "kg"
+  const response = await fetch('/api/parse-receipt', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
     },
-    {
-      "rawName": "NATA FRIMESA 300G",
-      "code": "7896275970185",
-      "quantity": 1,
-      "unit": "Un",
-      "unitPrice": 16.99,
-      "totalPrice": 16.99,
-      "category": "ingredient",
-      "suggestedPackageAmount": 300,
-      "suggestedUnit": "g"
-    }
-  ]
-}`;
-
-  const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash',
-    contents: [
-      {
-        role: 'user',
-        parts: [
-          { text: prompt },
-          {
-            inlineData: {
-              data: imageBase64,
-              mimeType: mimeType
-            }
-          }
-        ]
-      }
-    ],
-    config: {
-      responseMimeType: 'application/json'
-    }
+    body: JSON.stringify({
+      imageBase64,
+      mimeType
+    })
   });
 
-  const responseText = response.text || '{}';
-  try {
-    const parsed = JSON.parse(responseText);
-    return parsed as ParsedReceiptData;
-  } catch (err) {
-    // If JSON wrapped in ```json block
-    const cleaned = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    return JSON.parse(cleaned) as ParsedReceiptData;
+  if (!response.ok) {
+    let errorDetail = 'Erro ao processar o cupom fiscal.';
+    try {
+      const errJson = await response.json();
+      errorDetail = errJson.error || errJson.message || errorDetail;
+    } catch (e) {
+      errorDetail = `Erro HTTP ${response.status}: ${response.statusText}`;
+    }
+    throw new Error(errorDetail);
   }
+
+  const data = await response.json();
+  return data as ParsedReceiptData;
 };
 
 // Automatic Fuzzy Matching to link with existing ingredients or packaging
