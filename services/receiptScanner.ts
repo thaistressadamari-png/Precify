@@ -332,24 +332,33 @@ export const parseNfeXml = (xmlText: string): ParsedReceiptData => {
 
 // Parse Receipt Photo / Document using Server-Side Gemini API Proxy (/api/parse-receipt)
 export const parseReceiptImageWithGemini = async (imageBase64: string, mimeType: string = 'image/jpeg'): Promise<ParsedReceiptData> => {
-  const response = await fetch('/api/parse-receipt', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      imageBase64,
-      mimeType
-    })
-  });
+  let response: globalThis.Response;
+  try {
+    response = await fetch('/api/parse-receipt', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        imageBase64,
+        mimeType
+      })
+    });
+  } catch (netErr: any) {
+    throw new Error('Não foi possível conectar ao servidor de processamento. Verifique sua conexão.');
+  }
 
   if (!response.ok) {
     let errorDetail = 'Erro ao processar o cupom fiscal.';
-    try {
-      const errJson = await response.json();
-      errorDetail = errJson.error || errJson.message || errorDetail;
-    } catch (e) {
-      errorDetail = `Erro HTTP ${response.status}: ${response.statusText}`;
+    if (response.status === 404) {
+      errorDetail = 'A rota /api/parse-receipt não foi encontrada (404). Se estiver na Vercel, certifique-se de que a variável GEMINI_API_KEY está configurada no painel da Vercel e o arquivo vercel.json foi implantado.';
+    } else {
+      try {
+        const errJson = await response.json();
+        errorDetail = errJson.error || errJson.message || errorDetail;
+      } catch {
+        errorDetail = `Erro no servidor (${response.status}): ${response.statusText}`;
+      }
     }
     throw new Error(errorDetail);
   }
