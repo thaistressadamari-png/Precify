@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import type { Ingredient, Packaging, Equipment, InvoiceReceipt, InvoicePurchaseItem, Unit, PackagingUnit } from '../types';
 import { XMarkIcon } from './icons/XMarkIcon';
@@ -7,13 +7,15 @@ import { PlusIcon } from './icons/PlusIcon';
 import { TrashIcon } from './icons/TrashIcon';
 import { LinkIcon } from './icons/LinkIcon';
 import { SearchIcon } from './icons/SearchIcon';
+import { CameraIcon } from './icons/CameraIcon';
+import { ArrowUpTrayIcon } from './icons/ArrowUpTrayIcon';
 import { formatCurrency, safeParseFloat } from './utils';
-import { findBestMatch } from '../services/receiptScanner';
+import { findBestMatch, parseReceiptImageWithGemini, parseNfceTextContent, compressImageForOcr } from '../services/receiptScanner';
 
 interface ReviewReceiptModalProps {
   isOpen: boolean;
   onClose: () => void;
-  initialReceipt: Partial<InvoiceReceipt>;
+  initialReceipt: Partial<InvoiceReceipt> & { warning?: string; isCaptchaRequired?: boolean };
   existingIngredients: Ingredient[];
   existingPackaging: Packaging[];
   existingEquipment?: Equipment[];
@@ -27,6 +29,217 @@ interface ReviewReceiptModalProps {
     updatedEquipment?: Equipment[]
   ) => void;
 }
+
+// Helper Combobox component for interactive search & selection when linking existing products
+interface LinkItemComboboxProps {
+  item: InvoicePurchaseItem;
+  existingIngredients: Ingredient[];
+  existingPackaging: Packaging[];
+  existingEquipment: Equipment[];
+  onSelect: (targetId: string, name: string, unit?: string, packageAmount?: number) => void;
+}
+
+const LinkItemCombobox: React.FC<LinkItemComboboxProps> = ({
+  item,
+  existingIngredients,
+  existingPackaging,
+  existingEquipment,
+  onSelect
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const category = item.category || 'ingredient';
+
+  const options = React.useMemo(() => {
+    if (category === 'ingredient') {
+      return existingIngredients.map((i) => ({
+        id: i.id,
+        name: i.name,
+        unit: i.unit,
+        amount: i.packageAmount,
+        price: i.packagePrice
+      }));
+    }
+    if (category === 'packaging') {
+      return existingPackaging.map((p) => ({
+        id: p.id,
+        name: p.name,
+        unit: p.unit,
+        amount: p.amount,
+        price: p.price
+      }));
+    }
+    if (category === 'equipment') {
+      return existingEquipment.map((e) => ({
+        id: e.id,
+        name: e.name,
+        unit: 'un',
+        amount: e.quantity || 1,
+        price: e.price
+      }));
+    }
+    return [];
+  }, [category, existingIngredients, existingPackaging, existingEquipment]);
+
+  const filtered = React.useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter((opt) => opt.name.toLowerCase().includes(q));
+  }, [options, query]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(target) &&
+        dropdownRef.current &&
+        !dropdownRef.current.contains(target)
+      ) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const [coords, setCoords] = useState<{ top: number; left: number; width: number }>({ top: 0, left: 0, width: 320 });
+
+  const updateCoords = React.useCallback(() => {
+    if (inputRef.current) {
+      const rect = inputRef.current.getBoundingClientRect();
+      setCoords({
+        top: rect.bottom + 4,
+        left: rect.left,
+        width: Math.max(rect.width, 320)
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      updateCoords();
+      window.addEventListener('scroll', updateCoords, true);
+      window.addEventListener('resize', updateCoords);
+      return () => {
+        window.removeEventListener('scroll', updateCoords, true);
+        window.removeEventListener('resize', updateCoords);
+      };
+    }
+  }, [isOpen, updateCoords]);
+
+  const selectedOpt = options.find((o) => o.id === item.existingTargetId);
+
+  const dropdownPortal = isOpen ? createPortal(
+    <div
+      ref={dropdownRef}
+      style={{
+        position: 'fixed',
+        top: `${coords.top}px`,
+        left: `${coords.left}px`,
+        width: `${coords.width}px`,
+        maxHeight: '260px'
+      }}
+      className="z-[999999] bg-white dark:bg-gray-800 border-2 border-blue-400 dark:border-blue-600 rounded-2xl shadow-2xl overflow-hidden overflow-y-auto p-1.5 animate-fade-in"
+    >
+      <div className="px-3 py-1.5 text-[10px] font-extrabold text-blue-600 dark:text-blue-400 uppercase tracking-wider border-b border-blue-100 dark:border-gray-700 mb-1 flex items-center justify-between bg-blue-50/80 dark:bg-gray-900/50 rounded-lg">
+        <span>Produtos Cadastrados ({filtered.length})</span>
+        {query && <span className="text-[9px] text-gray-500 font-normal">Filtro: "{query}"</span>}
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="px-3 py-4 text-center text-xs text-gray-500 dark:text-gray-400 font-medium">
+          Nenhum produto cadastrado com "{query}"
+        </div>
+      ) : (
+        filtered.map((opt) => {
+          const isSelected = opt.id === item.existingTargetId;
+          return (
+            <button
+              type="button"
+              key={opt.id}
+              onClick={() => {
+                onSelect(opt.id, opt.name, opt.unit, opt.amount);
+                setIsOpen(false);
+                setQuery('');
+              }}
+              className={`w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between gap-2 transition cursor-pointer my-0.5 ${
+                isSelected
+                  ? 'bg-blue-100 dark:bg-blue-900/80 font-bold text-blue-950 dark:text-blue-100'
+                  : 'hover:bg-blue-50 dark:hover:bg-gray-700/80 text-gray-800 dark:text-gray-100'
+              }`}
+            >
+              <div className="truncate font-semibold flex-1">
+                {opt.name}
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-blue-100 dark:bg-gray-700 border border-blue-300 dark:border-gray-600 text-blue-900 dark:text-blue-200">
+                  {opt.amount} {opt.unit}
+                </span>
+                <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400">
+                  {formatCurrency(opt.price)}
+                </span>
+                {isSelected && (
+                  <CheckCircleIcon className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                )}
+              </div>
+            </button>
+          );
+        })
+      )}
+    </div>,
+    document.body
+  ) : null;
+
+  return (
+    <div ref={containerRef} className="relative w-full">
+      <div className="relative flex items-center">
+        <SearchIcon className="w-3.5 h-3.5 text-blue-500 absolute left-2.5 pointer-events-none" />
+        <input
+          ref={inputRef}
+          type="text"
+          value={isOpen ? query : (selectedOpt ? selectedOpt.name : item.targetName || '')}
+          onFocus={() => {
+            updateCoords();
+            setIsOpen(true);
+            setQuery('');
+          }}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            updateCoords();
+            if (!isOpen) setIsOpen(true);
+          }}
+          placeholder="Pesquisar produto pelo nome..."
+          className="w-full h-8 pl-8 pr-7 text-xs bg-white dark:bg-gray-700 border border-blue-300 dark:border-blue-600 rounded-lg font-medium text-blue-950 dark:text-blue-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none truncate shadow-xs cursor-pointer"
+        />
+        {item.existingTargetId ? (
+          <button
+            type="button"
+            onClick={() => {
+              updateCoords();
+              setQuery('');
+              setIsOpen(!isOpen);
+            }}
+            title="Escolher outro produto"
+            className="absolute right-2 p-0.5 text-blue-500 hover:text-blue-700 dark:hover:text-blue-300 rounded cursor-pointer"
+          >
+            <CheckCircleIcon className="w-4 h-4 text-emerald-600" />
+          </button>
+        ) : (
+          <div className="absolute right-2 pointer-events-none text-gray-400 text-[10px]">
+            ▼
+          </div>
+        )}
+      </div>
+
+      {dropdownPortal}
+    </div>
+  );
+};
 
 export const ReviewReceiptModal: React.FC<ReviewReceiptModalProps> = ({
   isOpen,
@@ -54,63 +267,170 @@ export const ReviewReceiptModal: React.FC<ReviewReceiptModalProps> = ({
     }
   }, [isOpen]);
 
+  // Helper map item specs
+  const mapInitialItem = (item: any, index: number): InvoicePurchaseItem => {
+    let isLinkExisting = false;
+    let existingTargetId: string | undefined = undefined;
+    let targetName = item.targetName || item.rawName;
+    let category = item.category || 'ingredient';
+
+    let matchedUnit: string | undefined;
+    let matchedAmount: number | undefined;
+
+    if (category === 'equipment') {
+      const equipMatch = existingEquipment.find(
+        (e) => e.name.toLowerCase().trim() === item.rawName.toLowerCase().trim()
+      );
+      if (equipMatch) {
+        isLinkExisting = true;
+        existingTargetId = equipMatch.id;
+        targetName = equipMatch.name;
+        matchedUnit = 'un';
+        matchedAmount = equipMatch.quantity || 1;
+      }
+    } else if (category === 'packaging') {
+      const bestMatch = findBestMatch(item.rawName, 'packaging', existingIngredients, existingPackaging);
+      if (bestMatch) {
+        const pkgObj = existingPackaging.find((p) => p.id === bestMatch.id);
+        isLinkExisting = true;
+        existingTargetId = bestMatch.id;
+        targetName = bestMatch.name;
+        if (pkgObj) {
+          matchedUnit = pkgObj.unit;
+          matchedAmount = pkgObj.amount;
+        }
+      }
+    } else {
+      const bestMatch = findBestMatch(item.rawName, 'ingredient', existingIngredients, existingPackaging);
+      if (bestMatch) {
+        const ingObj = existingIngredients.find((i) => i.id === bestMatch.id);
+        isLinkExisting = true;
+        existingTargetId = bestMatch.id;
+        targetName = bestMatch.name;
+        if (ingObj) {
+          matchedUnit = ingObj.unit;
+          matchedAmount = ingObj.packageAmount;
+        }
+      }
+    }
+
+    const targetUnit = (
+      matchedUnit ||
+      item.targetUnit ||
+      item.suggestedUnit ||
+      (category === 'packaging' || category === 'equipment' ? 'un' : 'un')
+    ) as Unit | PackagingUnit | 'un';
+
+    const packageAmount =
+      matchedAmount ||
+      item.packageAmount ||
+      item.suggestedPackageAmount ||
+      (category === 'equipment' ? (item.quantity || 1) : 1);
+
+    return {
+      id: item.id || `item-${Date.now()}-${index}`,
+      rawName: item.rawName,
+      code: item.code || '',
+      quantity: item.quantity || 1,
+      unit: item.unit || 'UN',
+      unitPrice: item.unitPrice || item.packagePrice || 0,
+      totalPrice: item.totalPrice || item.packagePrice || 0,
+      category: category,
+      linkType: isLinkExisting ? 'existing' : 'new',
+      existingTargetId: existingTargetId,
+      targetName: targetName,
+      packageAmount: packageAmount,
+      targetUnit: targetUnit,
+      packagePrice: item.packagePrice || item.totalPrice || item.unitPrice || 0
+    };
+  };
+
   // Initialize review items
   const [items, setItems] = useState<InvoicePurchaseItem[]>(() => {
     const rawItems = initialReceipt.items || [];
-    return rawItems.map((item, index) => {
-      let isLinkExisting = false;
-      let existingTargetId: string | undefined = undefined;
-      let targetName = item.targetName || item.rawName;
-      let category = item.category || 'ingredient';
-
-      if (category === 'equipment') {
-        const equipMatch = existingEquipment.find(
-          (e) => e.name.toLowerCase().trim() === item.rawName.toLowerCase().trim()
-        );
-        if (equipMatch) {
-          isLinkExisting = true;
-          existingTargetId = equipMatch.id;
-          targetName = equipMatch.name;
-        }
-      } else {
-        const bestMatch = findBestMatch(
-          item.rawName,
-          category === 'packaging' ? 'packaging' : 'ingredient',
-          existingIngredients,
-          existingPackaging
-        );
-        if (bestMatch) {
-          isLinkExisting = true;
-          existingTargetId = bestMatch.id;
-          targetName = bestMatch.name;
-        }
-      }
-
-      const targetUnit = (item.targetUnit || (category === 'packaging' || category === 'equipment' ? 'un' : 'g')) as Unit | PackagingUnit | 'un';
-
-      return {
-        id: item.id || `item-${Date.now()}-${index}`,
-        rawName: item.rawName,
-        code: item.code || '',
-        quantity: item.quantity || 1,
-        unit: item.unit || 'UN',
-        unitPrice: item.unitPrice || item.packagePrice || 0,
-        totalPrice: item.totalPrice || item.packagePrice || 0,
-        category: category,
-        linkType: isLinkExisting ? 'existing' : 'new',
-        existingTargetId: existingTargetId,
-        targetName: targetName,
-        packageAmount: item.packageAmount || (category === 'equipment' ? (item.quantity || 1) : 1),
-        targetUnit: targetUnit,
-        packagePrice: item.packagePrice || item.totalPrice || item.unitPrice || 0
-      };
-    });
+    return rawItems.map((item, index) => mapInitialItem(item, index));
   });
 
   if (!isOpen) return null;
 
   // Filter state for searching existing items per item card
   const [searchFilter, setSearchFilter] = useState<{ [itemId: string]: string }>({});
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isProcessingOcr, setIsProcessingOcr] = useState(false);
+  const [ocrError, setOcrError] = useState('');
+  const [showPasteModal, setShowPasteModal] = useState(false);
+  const [pastedText, setPastedText] = useState('');
+
+  const handleImageFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsProcessingOcr(true);
+    setOcrError('');
+    try {
+      const compressedBase64 = await compressImageForOcr(file);
+      const parsed = await parseReceiptImageWithGemini(compressedBase64);
+      if (parsed && parsed.items && parsed.items.length > 0) {
+        const newMappedItems = parsed.items.map((item, index) => mapInitialItem(item, index));
+
+        setItems(newMappedItems);
+        if (parsed.supplier) setSupplier(parsed.supplier);
+        if (parsed.cnpj) setCnpj(parsed.cnpj);
+        if (parsed.date) setDate(parsed.date);
+      } else {
+        setOcrError('Não foi possível identificar os produtos na foto. Tente enviar uma foto mais nítida do cupom.');
+      }
+    } catch (err: any) {
+      console.error('Erro no OCR em modal:', err);
+      setOcrError('Falha ao processar foto com IA: ' + (err.message || 'Tente novamente'));
+    } finally {
+      setIsProcessingOcr(false);
+      if (e.target) e.target.value = '';
+    }
+  };
+
+  const handleProcessPastedText = async () => {
+    if (!pastedText.trim()) return;
+    setIsProcessingOcr(true);
+    setOcrError('');
+    setShowPasteModal(false);
+
+    try {
+      let parsed = parseNfceTextContent(pastedText);
+
+      // Fallback to Gemini AI if local regex didn't extract items
+      if (!parsed || !parsed.items || parsed.items.length === 0) {
+        try {
+          const res = await fetch('/api/parse-receipt', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ textContent: pastedText })
+          });
+          if (res.ok) {
+            parsed = await res.json();
+          }
+        } catch (aiErr) {
+          console.warn('Fallback AI em texto falhou:', aiErr);
+        }
+      }
+
+      if (parsed && parsed.items && parsed.items.length > 0) {
+        const newMappedItems = parsed.items.map((item, index) => mapInitialItem(item, index));
+
+        setItems(newMappedItems);
+        if (parsed.supplier && parsed.supplier !== 'Fornecedor / NFC-e') setSupplier(parsed.supplier);
+        if (parsed.cnpj) setCnpj(parsed.cnpj);
+        if (parsed.date) setDate(parsed.date);
+        setPastedText('');
+      } else {
+        setOcrError('Não foi possível identificar produtos no texto colado. Tente enviar uma foto do cupom.');
+      }
+    } catch (err: any) {
+      setOcrError('Erro ao processar texto: ' + (err.message || 'Tente novamente'));
+    } finally {
+      setIsProcessingOcr(false);
+    }
+  };
 
   const handleItemChange = (id: string, updates: Partial<InvoicePurchaseItem>) => {
     setItems((prev) =>
@@ -490,19 +810,122 @@ export const ReviewReceiptModal: React.FC<ReviewReceiptModalProps> = ({
             </div>
           </div>
 
-          {/* Empty state if no items */}
-          {items.length === 0 && (
-            <div className="text-center py-8 px-4 bg-white dark:bg-gray-800 border-2 border-dashed border-rose-200 dark:border-gray-700 rounded-xl my-2">
-              <p className="text-xs font-semibold text-brand-text dark:text-gray-300 mb-2">
-                Nenhum produto listado neste cupom.
-              </p>
-              <button
-                type="button"
-                onClick={handleAddNewManualItem}
-                className="py-1.5 px-3 bg-brand-primary hover:bg-rose-600 text-white text-xs font-bold rounded-lg shadow-sm transition"
-              >
-                + Adicionar Primeiro Item
-              </button>
+          {/* Hidden File Input for Receipt Photo */}
+          <input
+            type="file"
+            ref={fileInputRef}
+            accept="image/*"
+            className="hidden"
+            onChange={handleImageFileSelected}
+          />
+
+          {/* Processing Banner */}
+          {isProcessingOcr && (
+            <div className="flex items-center justify-center gap-3 py-6 px-4 bg-brand-primary/10 border border-brand-primary/30 rounded-xl my-2 text-brand-primary animate-pulse">
+              <div className="w-5 h-5 border-2 border-brand-primary border-t-transparent rounded-full animate-spin" />
+              <span className="text-xs font-bold">Processando foto do cupom com Inteligência Artificial...</span>
+            </div>
+          )}
+
+          {ocrError && (
+            <div className="p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-xl text-xs text-red-600 dark:text-red-300 font-medium my-2">
+              {ocrError}
+            </div>
+          )}
+
+          {/* SEFAZ CAPTCHA / Zero items helpful guidance banner */}
+          {items.length === 0 && !isProcessingOcr && (
+            <div className="p-4 bg-amber-50/90 dark:bg-amber-950/40 border-2 border-dashed border-amber-300 dark:border-amber-700/80 rounded-2xl my-3 text-left">
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-amber-100 dark:bg-amber-900/60 rounded-xl text-amber-700 dark:text-amber-300 shrink-0">
+                  <CameraIcon className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-amber-900 dark:text-amber-200">
+                    Nenhum produto importado automaticamente da SEFAZ
+                  </h4>
+                  <p className="text-[11px] text-amber-800/90 dark:text-amber-300/90 mt-1 leading-relaxed">
+                    A SEFAZ do estado (como a de SP) exige verificação de CAPTCHA no site para liberar os itens quando pesquisado apenas pela chave digitada.
+                  </p>
+                  <p className="text-[11px] font-semibold text-amber-900 dark:text-amber-100 mt-1">
+                    Como você deseja carregar os produtos deste cupom?
+                  </p>
+
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="py-2 px-3.5 bg-brand-primary hover:bg-rose-600 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <CameraIcon className="w-4 h-4" />
+                      📸 Ler Foto / Print do Cupom (IA)
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowPasteModal(true)}
+                      className="py-2 px-3.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <ArrowUpTrayIcon className="w-4 h-4" />
+                      📋 Colar Texto da SEFAZ
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleAddNewManualItem}
+                      className="py-2 px-3.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5"
+                    >
+                      + Digitar Manualmente
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Modal for pasting text copied from SEFAZ */}
+          {showPasteModal && (
+            <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+              <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-md w-full p-5 shadow-2xl border border-gray-200 dark:border-gray-700 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                    <span>📋</span> Colar Texto da SEFAZ
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setShowPasteModal(false)}
+                    className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-lg"
+                  >
+                    <XMarkIcon className="w-5 h-5" />
+                  </button>
+                </div>
+                <p className="text-xs text-gray-600 dark:text-gray-300">
+                  Abra a consulta da SEFAZ no seu navegador, selecione todo o texto da nota (Ctrl+A), copie (Ctrl+C) e cole abaixo:
+                </p>
+                <textarea
+                  rows={6}
+                  value={pastedText}
+                  onChange={(e) => setPastedText(e.target.value)}
+                  placeholder="Cole aqui o texto copiado da página da SEFAZ..."
+                  className="w-full p-3 text-xs bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-brand-primary outline-none font-mono text-gray-800 dark:text-gray-200"
+                />
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowPasteModal(false)}
+                    className="px-3 py-2 text-xs font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleProcessPastedText}
+                    className="px-4 py-2 text-xs font-bold bg-brand-primary hover:bg-rose-600 text-white rounded-xl shadow-xs"
+                  >
+                    Extrair Produtos do Texto
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
@@ -527,7 +950,7 @@ export const ReviewReceiptModal: React.FC<ReviewReceiptModalProps> = ({
             return (
               <div
                 key={item.id}
-                className={`rounded-xl border shadow-xs transition-all overflow-hidden ${
+                className={`rounded-xl border shadow-xs transition-all ${
                   isIgnore
                     ? 'bg-gray-50/70 dark:bg-gray-900/60 border-gray-200 dark:border-gray-800 opacity-60'
                     : item.linkType === 'existing'
@@ -668,49 +1091,20 @@ export const ReviewReceiptModal: React.FC<ReviewReceiptModalProps> = ({
                             placeholder="Nome para cadastrar..."
                           />
                         ) : (
-                          <div className="bg-blue-50/70 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-lg p-1.5 space-y-1">
-                            {/* Barra de pesquisa rápida para achar o item */}
-                            <div className="relative">
-                              <SearchIcon className="w-3.5 h-3.5 text-blue-500 absolute left-2 top-2 pointer-events-none" />
-                              <input
-                                type="text"
-                                value={searchFilter[item.id] || ''}
-                                onChange={(e) =>
-                                  setSearchFilter((prev) => ({ ...prev, [item.id]: e.target.value }))
-                                }
-                                placeholder="Filtrar existentes..."
-                                className="w-full h-7 pl-6 pr-2 text-xs bg-white dark:bg-gray-700 border border-blue-200 dark:border-blue-700 rounded text-slate-800 dark:text-gray-100 placeholder:text-gray-400 focus:ring-1 focus:ring-blue-500 outline-none"
-                              />
-                            </div>
-                            
-                            <select
-                              value={item.existingTargetId || ''}
-                              onChange={(e) => handleItemChange(item.id, { existingTargetId: e.target.value })}
-                              className="w-full h-8 px-2 text-xs bg-white dark:bg-gray-700 border border-blue-300 dark:border-blue-600 rounded font-medium text-blue-950 dark:text-blue-100 focus:ring-1 focus:ring-blue-500 outline-none truncate"
-                            >
-                              <option value="" disabled>
-                                Selecione ({isIngredient ? filteredIngredients.length : isPackaging ? filteredPackaging.length : filteredEquipment.length} encontrados)...
-                              </option>
-                              {isIngredient &&
-                                filteredIngredients.map((ing) => (
-                                  <option key={ing.id} value={ing.id}>
-                                    {ing.name} ({ing.packageAmount}{ing.unit} - {formatCurrency(ing.packagePrice)})
-                                  </option>
-                                ))}
-                              {isPackaging &&
-                                filteredPackaging.map((pkg) => (
-                                  <option key={pkg.id} value={pkg.id}>
-                                    {pkg.name} ({pkg.amount}{pkg.unit} - {formatCurrency(pkg.price)})
-                                  </option>
-                                ))}
-                              {isEquipment &&
-                                filteredEquipment.map((equip) => (
-                                  <option key={equip.id} value={equip.id}>
-                                    {equip.name} ({equip.quantity || 1}un - {formatCurrency(equip.price)})
-                                  </option>
-                                ))}
-                            </select>
-                          </div>
+                          <LinkItemCombobox
+                            item={item}
+                            existingIngredients={existingIngredients}
+                            existingPackaging={existingPackaging}
+                            existingEquipment={existingEquipment}
+                            onSelect={(targetId, name, unit, packageAmount) => {
+                              handleItemChange(item.id, {
+                                existingTargetId: targetId,
+                                targetName: name,
+                                targetUnit: (unit as any) || item.targetUnit,
+                                packageAmount: packageAmount || item.packageAmount
+                              });
+                            }}
+                          />
                         )}
                       </div>
 

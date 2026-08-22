@@ -54,6 +54,17 @@ export default async function handler(req: Request, res: Response) {
     const html = await response.text();
     console.log(`📄 [SEFAZ API] Conteúdo HTML obtido com sucesso! Tamanho: ${html.length} caracteres.`);
 
+    // Enhanced HTML to text cleaner preserving line breaks for Gemini AI Fallback
+    const cleanText = html
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+      .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+      .replace(/<\/(tr|div|p|li|h\d|table)>/gi, '\n')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/[ \t]+/g, ' ')
+      .replace(/\n\s*\n/g, '\n')
+      .substring(0, 20000);
+
     function guessCategory(name: string): string {
       const lower = name.toLowerCase();
       const packagingKeywords = [
@@ -81,12 +92,17 @@ export default async function handler(req: Request, res: Response) {
       return { amount: 1, unit: unit.toLowerCase() === 'kg' ? 'kg' : 'un' };
     }
 
-    // Fast RegEx parser for standard SEFAZ NFC-e QR Code page
+    // Check if SEFAZ returned a CAPTCHA or blocking screen
+    const isCaptchaOrBlocked =
+      /g-recaptcha|hcaptcha|recaptcha|captcha|Acesso Restrito|bloqueio|robot|Consulte mais tarde/i.test(html) ||
+      (/Consulta Publica/i.test(html) && !/Item/i.test(html));
+
+    // Fast RegEx parser for standard SEFAZ NFC-e QR Code page (SP, PR, RS, RJ, MS, BA, etc.)
     let supplier = 'Fornecedor / NFC-e';
     const topoMatch =
-      html.match(/<div[^>]*class="txtTopo"[^>]*>([^<]+)<\/div>/i) ||
-      html.match(/<div class="txtTopo">([^<]+)<\/div>/i) ||
-      html.match(/<div class="txtTit">([^<]+)<\/div>/i);
+      html.match(/<div[^>]*class=["']?txtTopo["']?[^>]*>([^<]+)<\/div>/i) ||
+      html.match(/<div[^>]*class=["']?txtTit["']?[^>]*>([^<]+)<\/div>/i) ||
+      html.match(/<span[^>]*class=["']?txtTopo["']?[^>]*>([^<]+)<\/span>/i);
     if (topoMatch) {
       supplier = topoMatch[1].trim();
     }
@@ -107,51 +123,52 @@ export default async function handler(req: Request, res: Response) {
 
     let accessKey = '';
     const keyMatch =
-      html.match(/<span class="chave">([^<]+)<\/span>/i) ||
+      html.match(/<span[^>]*class=["']?chave["']?[^>]*>([^<]+)<\/span>/i) ||
       url.match(/[?&]p=([0-9]{44})/i) ||
-      url.match(/p=([0-9]{44})/i);
+      url.match(/p=([0-9]{44})/i) ||
+      url.match(/([0-9]{44})/);
     if (keyMatch) {
       accessKey = (keyMatch[1] || keyMatch[0]).replace(/[\s.-]/g, '');
     }
 
     let nfcNumber = '';
     let series = '';
-    const numMatch = html.match(/<strong>N[uú]mero:\s*<\/strong>\s*(\d+)/i);
+    const numMatch = html.match(/<strong>\s*N[uú]mero:\s*<\/strong>\s*(\d+)/i) || html.match(/nNF=(\d+)/i);
     if (numMatch) nfcNumber = numMatch[1];
     const serMatch = html.match(/<strong>\s*S[eé]rie:\s*<\/strong>\s*(\d+)/i);
     if (serMatch) series = serMatch[1];
 
     let totalAmount = 0;
     const totalMatch =
-      html.match(/<label>Valor a pagar R\$:<\/label>\s*<span class="totalNumb txtMax">([^<]+)<\/span>/i) ||
-      html.match(/<span class="totalNumb txtMax">([^<]+)<\/span>/i) ||
+      html.match(/<label>Valor a pagar R\$:<\/label>\s*<span[^>]*class=["']?totalNumb txtMax["']?[^>]*>([^<]+)<\/span>/i) ||
+      html.match(/<span[^>]*class=["']?totalNumb txtMax["']?[^>]*>([^<]+)<\/span>/i) ||
       html.match(/(?:Valor\s+a\s+pagar|Valor\s+Total)\s*R?\$?:?\s*([\d.,]+)/i);
     if (totalMatch) {
       totalAmount = parseFloat(totalMatch[1].replace(',', '.'));
     }
 
     const items: any[] = [];
-    const rowRegex = /<tr id="Item \+ \d+">([\s\S]*?)<\/tr>/gi;
+    const rowRegex = /<tr[^>]*id=["']?Item\s*[\+_]?\s*\d+["']?[^>]*>([\s\S]*?)<\/tr>/gi;
     let match;
     while ((match = rowRegex.exec(html)) !== null) {
       const rowHtml = match[1];
 
-      const nameMatch = rowHtml.match(/<span class="txtTit">([^<]+)<\/span>/i);
+      const nameMatch = rowHtml.match(/<span[^>]*class=["']?txtTit["']?[^>]*>([^<]+)<\/span>/i);
       const rawName = nameMatch ? nameMatch[1].trim() : 'Item sem nome';
 
-      const codeMatch = rowHtml.match(/<span class="RCod">[\s\S]*?\(C[oó]digo:\s*([^\)]+)\)[\s\S]*?<\/span>/i);
+      const codeMatch = rowHtml.match(/<span[^>]*class=["']?RCod["']?[^>]*>[\s\S]*?\(C[oó]digo:\s*([^\)]+)\)[\s\S]*?<\/span>/i);
       const code = codeMatch ? codeMatch[1].trim() : '';
 
-      const qtdMatch = rowHtml.match(/<span class="Rqtd"><strong>Qtde\.:<\/strong>\s*([\d.,]+)<\/span>/i);
+      const qtdMatch = rowHtml.match(/<span[^>]*class=["']?Rqtd["']?[^>]*>[\s\S]*?Qtde\.:?\s*([\d.,]+)<\/span>/i);
       const quantity = qtdMatch ? parseFloat(qtdMatch[1].replace(',', '.')) : 1;
 
-      const unMatch = rowHtml.match(/<span class="RUN"><strong>UN:\s*<\/strong>\s*([^<]+)<\/span>/i);
+      const unMatch = rowHtml.match(/<span[^>]*class=["']?RUN["']?[^>]*>[\s\S]*?UN:?\s*([^<]+)<\/span>/i);
       const unit = unMatch ? unMatch[1].trim() : 'UN';
 
-      const vlUnitMatch = rowHtml.match(/<span class="RvlUnit"><strong>Vl\.\s*Unit\.:<\/strong>[\s\S]*?([0-9.,]+)<\/span>/i);
+      const vlUnitMatch = rowHtml.match(/<span[^>]*class=["']?RvlUnit["']?[^>]*>[\s\S]*?Vl\.\s*Unit\.:?[\s\S]*?([0-9.,]+)<\/span>/i);
       const unitPrice = vlUnitMatch ? parseFloat(vlUnitMatch[1].replace(',', '.')) : 0;
 
-      const vlTotMatch = rowHtml.match(/<span class="valor">([^<]+)<\/span>/i);
+      const vlTotMatch = rowHtml.match(/<span[^>]*class=["']?valor["']?[^>]*>([^<]+)<\/span>/i);
       const totalPrice = vlTotMatch ? parseFloat(vlTotMatch[1].replace(',', '.')) : quantity * unitPrice;
 
       const category = guessCategory(rawName);
@@ -191,65 +208,83 @@ export default async function handler(req: Request, res: Response) {
     }
 
     console.log('🤖 [SEFAZ API] Parser HTML padrão não localizou a tabela direta de itens. Acionando Gemini AI Fallback...');
-    // If regex didn't find items (different state portal layout), fallback to Gemini AI with HTML text
-    const cleanText = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-      .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .substring(0, 15000);
-
+    // Fallback to Gemini AI with formatted cleanText
     const ai = getGeminiClient();
     const prompt = `Analise o texto extraído da consulta pública da NFC-e da SEFAZ e retorne os dados fiscais e a lista de itens adquiridos com extrema precisão em JSON:
 Texto da página:
 ${cleanText}`;
 
-    const aiResponse = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            supplier: { type: Type.STRING },
-            cnpj: { type: Type.STRING },
-            date: { type: Type.STRING },
-            accessKey: { type: Type.STRING },
-            nfcNumber: { type: Type.STRING },
-            series: { type: Type.STRING },
-            totalAmount: { type: Type.NUMBER },
-            paymentMethod: { type: Type.STRING },
-            items: {
-              type: Type.ARRAY,
+    try {
+      const aiResponse = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              supplier: { type: Type.STRING },
+              cnpj: { type: Type.STRING },
+              date: { type: Type.STRING },
+              accessKey: { type: Type.STRING },
+              nfcNumber: { type: Type.STRING },
+              series: { type: Type.STRING },
+              totalAmount: { type: Type.NUMBER },
+              paymentMethod: { type: Type.STRING },
               items: {
-                type: Type.OBJECT,
-                properties: {
-                  rawName: { type: Type.STRING },
-                  code: { type: Type.STRING },
-                  quantity: { type: Type.NUMBER },
-                  unit: { type: Type.STRING },
-                  unitPrice: { type: Type.NUMBER },
-                  totalPrice: { type: Type.NUMBER },
-                  category: { type: Type.STRING },
-                  suggestedPackageAmount: { type: Type.NUMBER },
-                  suggestedUnit: { type: Type.STRING }
-                },
-                required: ['rawName', 'quantity', 'unitPrice', 'totalPrice']
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    rawName: { type: Type.STRING },
+                    code: { type: Type.STRING },
+                    quantity: { type: Type.NUMBER },
+                    unit: { type: Type.STRING },
+                    unitPrice: { type: Type.NUMBER },
+                    totalPrice: { type: Type.NUMBER },
+                    category: { type: Type.STRING },
+                    suggestedPackageAmount: { type: Type.NUMBER },
+                    suggestedUnit: { type: Type.STRING }
+                  },
+                  required: ['rawName', 'quantity', 'unitPrice', 'totalPrice']
+                }
               }
-            }
-          },
-          required: ['supplier', 'totalAmount', 'items']
+            },
+            required: ['supplier', 'totalAmount', 'items']
+          }
+        }
+      });
+
+      if (aiResponse.text) {
+        const parsedJson = JSON.parse(aiResponse.text);
+        console.log(`✅ [SEFAZ API] Sucesso via Gemini AI! ${parsedJson.items?.length || 0} itens extraídos.`);
+        if (parsedJson.items && parsedJson.items.length > 0) {
+          return res.json({
+            ...parsedJson,
+            accessKey: parsedJson.accessKey || accessKey,
+            cnpj: parsedJson.cnpj || cnpj,
+            supplier: parsedJson.supplier || supplier
+          });
         }
       }
-    });
-
-    if (aiResponse.text) {
-      const parsedJson = JSON.parse(aiResponse.text);
-      console.log(`✅ [SEFAZ API] Sucesso via Gemini AI! ${parsedJson.items?.length || 0} itens extraídos.`);
-      return res.json(parsedJson);
+    } catch (aiErr) {
+      console.warn('⚠️ [SEFAZ API] Falha na chamada Gemini AI:', aiErr);
     }
 
-    throw new Error('Não foi possível extrair a lista de itens do link da SEFAZ.');
+    // If both Regex and Gemini found 0 items (e.g. SEFAZ SP CAPTCHA required or block)
+    return res.json({
+      supplier: supplier !== 'Fornecedor / NFC-e' ? supplier : 'Supermercado (NFC-e SEFAZ)',
+      cnpj,
+      date,
+      accessKey,
+      nfcNumber,
+      series,
+      totalAmount,
+      paymentMethod: 'Cartão / Dinheiro',
+      items: [],
+      isCaptchaRequired: isCaptchaOrBlocked,
+      warning: 'A SEFAZ do estado requer validação de CAPTCHA / robô no navegador para esta consulta. Tire uma foto do cupom impresso ou cole o texto da página da SEFAZ para carregar todos os itens.'
+    });
   } catch (err: any) {
     console.error('❌ [SEFAZ API] Erro ao consultar URL da SEFAZ:', err);
     return res.status(500).json({ error: err.message || 'Falha ao buscar dados na SEFAZ.' });

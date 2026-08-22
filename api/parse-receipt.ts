@@ -39,16 +39,16 @@ export default async function handler(req: Request, res: Response) {
   }
 
   try {
-    const { imageBase64, mimeType = 'image/jpeg' } = req.body || {};
+    const { imageBase64, mimeType = 'image/jpeg', textContent } = req.body || {};
 
-    if (!imageBase64) {
-      return res.status(400).json({ error: 'Nenhuma imagem ou documento foi enviado.' });
+    if (!imageBase64 && !textContent) {
+      return res.status(400).json({ error: 'Nenhuma imagem, texto ou documento foi enviado.' });
     }
 
     const ai = getGeminiClient();
 
     const prompt = `Você é um assistente especializado em digitalização e extração ultrarrápida de Cupons Fiscais (NFC-e, NF-e, SAT, CF-e, recibos, fotos de comprovantes e capturas de tela/prints de consulta pública da SEFAZ) do Brasil.
-Analise o documento fiscal/screenshot/imagem fornecida com extrema precisão e extraia todos os itens e metadados.
+Analise os dados fornecidos com extrema precisão e extraia todos os itens e metadados.
 
 Regras de Extração:
 1. Extraia o nome do estabelecimento/supermercado/loja (supplier).
@@ -75,6 +75,19 @@ Retorne ESTRITAMENTE o JSON de acordo com o esquema solicitado.`;
     let lastError: any = null;
     let responseText = '';
 
+    const parts: any[] = [{ text: prompt }];
+    if (textContent) {
+      parts.push({ text: `\n\nTexto do Cupom / SEFAZ:\n${textContent}` });
+    }
+    if (imageBase64) {
+      parts.push({
+        inlineData: {
+          data: imageBase64,
+          mimeType: mimeType
+        }
+      });
+    }
+
     for (const modelName of candidateModels) {
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
@@ -86,15 +99,7 @@ Retorne ESTRITAMENTE o JSON de acordo com o esquema solicitado.`;
             contents: [
               {
                 role: 'user',
-                parts: [
-                  { text: prompt },
-                  {
-                    inlineData: {
-                      data: imageBase64,
-                      mimeType: mimeType
-                    }
-                  }
-                ]
+                parts
               }
             ],
             config: {

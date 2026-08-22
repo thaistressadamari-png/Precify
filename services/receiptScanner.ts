@@ -10,6 +10,8 @@ export interface ParsedReceiptData {
   series?: string;
   totalAmount: number;
   paymentMethod?: string;
+  isCaptchaRequired?: boolean;
+  warning?: string;
   items: Array<{
     rawName: string;
     code?: string;
@@ -202,7 +204,7 @@ export const guessCategory = (name: string): 'ingredient' | 'packaging' => {
   return packagingKeywords.some(kw => lower.includes(kw)) ? 'packaging' : 'ingredient';
 };
 
-// Smart unit and package amount extractor (e.g. "NATA FRIMESA 300G" -> 300g, "LEITE CONDENSADO 395G" -> 395g)
+// Smart unit and package amount extractor (e.g. "NATA FRIMESA 300G" -> 300g, "LEITE CONDENSADO 395G" -> 395g, "FARINHA TRIGO 1KG" -> 1kg)
 export const guessPackageSpecs = (
   name: string,
   rawUnit: string,
@@ -213,21 +215,14 @@ export const guessPackageSpecs = (
   const lower = name.toLowerCase();
   const normalizedRawUnit = (rawUnit || '').trim().toLowerCase();
 
-  // Look for grams in title (e.g., 300g, 395g, 500g, 100g, 1kg, 5kg, 1l, 900ml)
+  // Look for unit numbers in title (e.g., 300g, 395g, 500g, 1kg, 5kg, 1l, 900ml)
   const gramMatch = lower.match(/(\d+(?:[.,]\d+)?)\s*(g|gr|gramas)\b/);
   const kgMatch = lower.match(/(\d+(?:[.,]\d+)?)\s*(kg|kilos?|quilos?)\b/);
   const mlMatch = lower.match(/(\d+(?:[.,]\d+)?)\s*(ml|mls)\b/);
   const lMatch = lower.match(/(\d+(?:[.,]\d+)?)\s*(l|lt|litros?)\b/);
   const unMatch = lower.match(/(\d+)\s*(un|und|unid|unidades|pecas?|peças?)\b/);
 
-  if (normalizedRawUnit === 'kg') {
-    return {
-      amount: quantity > 0 ? quantity : 1,
-      unit: 'kg',
-      price: totalPrice > 0 ? totalPrice : unitPrice
-    };
-  }
-
+  // 1. Grams matched in title (e.g. 200g, 300g, 395g, 500g)
   if (gramMatch) {
     const val = parseFloat(gramMatch[1].replace(',', '.'));
     if (!isNaN(val) && val > 0) {
@@ -239,39 +234,43 @@ export const guessPackageSpecs = (
     }
   }
 
+  // 2. Kg matched in title (e.g. 1kg, 5kg, 0.5kg)
   if (kgMatch) {
     const val = parseFloat(kgMatch[1].replace(',', '.'));
     if (!isNaN(val) && val > 0) {
       return {
-        amount: val * 1000,
-        unit: 'g',
-        price: unitPrice > 0 ? unitPrice : totalPrice
+        amount: val,
+        unit: 'kg',
+        price: unitPrice > 0 ? unitPrice : (quantity > 0 ? totalPrice / quantity : totalPrice)
       };
     }
   }
 
+  // 3. ML matched in title (e.g. 200ml, 900ml)
   if (mlMatch) {
     const val = parseFloat(mlMatch[1].replace(',', '.'));
     if (!isNaN(val) && val > 0) {
       return {
         amount: val,
         unit: 'ml',
-        price: unitPrice > 0 ? unitPrice : totalPrice
+        price: unitPrice > 0 ? unitPrice : (quantity > 0 ? totalPrice / quantity : totalPrice)
       };
     }
   }
 
+  // 4. Liters matched in title (e.g. 1l, 2l, 5l)
   if (lMatch) {
     const val = parseFloat(lMatch[1].replace(',', '.'));
     if (!isNaN(val) && val > 0) {
       return {
-        amount: val * 1000,
-        unit: 'ml',
-        price: unitPrice > 0 ? unitPrice : totalPrice
+        amount: val,
+        unit: 'l',
+        price: unitPrice > 0 ? unitPrice : (quantity > 0 ? totalPrice / quantity : totalPrice)
       };
     }
   }
 
+  // 5. Units matched in title (e.g. 12un, 1un)
   if (unMatch) {
     const val = parseInt(unMatch[1], 10);
     if (!isNaN(val) && val > 0) {
@@ -283,7 +282,15 @@ export const guessPackageSpecs = (
     }
   }
 
-  // Default fallback based on raw unit
+  // 6. Check explicit raw unit from receipt line
+  if (normalizedRawUnit === 'kg' || lower.endsWith(' k') || lower.endsWith(' kg') || lower.includes('/kg') || lower.includes(' kg ')) {
+    return {
+      amount: quantity > 0 ? quantity : 1,
+      unit: 'kg',
+      price: totalPrice > 0 ? totalPrice : unitPrice
+    };
+  }
+
   if (['g', 'gr'].includes(normalizedRawUnit)) {
     return { amount: quantity > 0 ? quantity : 1000, unit: 'g', price: totalPrice > 0 ? totalPrice : unitPrice };
   }
@@ -303,6 +310,7 @@ export const guessPackageSpecs = (
     return { amount: quantity > 0 ? quantity : 1, unit: 'rolo', price: totalPrice > 0 ? totalPrice : unitPrice };
   }
 
+  // Default to 'un'
   return {
     amount: quantity > 0 ? quantity : 1,
     unit: 'un',
@@ -533,7 +541,15 @@ export const parseReceiptImageWithGemini = async (imageBase64: string, mimeType:
 
 // Parse plain text or copied content from SEFAZ portal / NFC-e websites
 export const parseNfceTextContent = (textContent: string): ParsedReceiptData => {
-  const lines = textContent.split('\n').map((l) => l.trim()).filter(Boolean);
+  // Pre-process & re-stitch line-broken fields from SEFAZ table copies
+  const normalizedText = textContent
+    .replace(/Vl\.\s*Total:?\s*[\r\n]+\s*([\d.,]+)/gi, 'Vl. Total: $1')
+    .replace(/Vl\.\s*Total:?\s*[\r\n]+/gi, 'Vl. Total: ')
+    .replace(/Vl\.\s*Unit\.?:?\s*[\r\n]+\s*([\d.,]+)/gi, 'Vl. Unit.: $1')
+    .replace(/UN:?\s*[\r\n]+\s*([A-Za-z0-9]+)/gi, 'UN: $1')
+    .replace(/Qtde\.?:?\s*[\r\n]+\s*([\d.,]+)/gi, 'Qtde.: $1');
+
+  const lines = normalizedText.split('\n').map((l) => l.trim()).filter(Boolean);
   let supplier = 'Fornecedor / NFC-e';
   let cnpj: string | undefined;
   let totalAmount = 0;
@@ -560,7 +576,7 @@ export const parseNfceTextContent = (textContent: string): ParsedReceiptData => 
   }
 
   // Find Supplier and CNPJ in text headers
-  for (let i = 0; i < Math.min(lines.length, 12); i++) {
+  for (let i = 0; i < Math.min(lines.length, 15); i++) {
     const l = lines[i];
     const cnpjMatch = l.match(/\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/);
     if (cnpjMatch) {
@@ -584,28 +600,59 @@ export const parseNfceTextContent = (textContent: string): ParsedReceiptData => 
 
   // Parse SEFAZ items pattern:
   // ITEM NAME (Código: ...)
-  // Qtde.: 1 UN: UN Vl. Unit.: 2,15 Vl. Total 2,15
+  // Qtde.: 1 UN: UN Vl. Unit.: 2,15 Vl. Total: 2,15
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const itemDetailsMatch = line.match(
-      /Qtde\.?:?\s*([\d.,]+)\s*UN:?\s*([A-Za-z0-9]+)\s*Vl\.\s*Unit\.?:?\s*([\d.,]+)\s*Vl\.\s*Total:?\s*([\d.,]+)/i
+      /Qtde\.?:?\s*([\d.,]+)\s*UN:?\s*([A-Za-z0-9]+)\s*Vl\.\s*Unit\.?:?\s*([\d.,]+)(?:\s*Vl\.\s*Total:?\s*([\d.,]+)?)?/i
     );
 
     if (itemDetailsMatch) {
-      const prevLine = i > 0 ? lines[i - 1] : 'Item';
-      const codeMatch = prevLine.match(/\(C[oó]digo:\s*([^\)]+)\)/i);
-      const rawName = prevLine.replace(/\(C[oó]digo:[^\)]+\)/i, '').trim() || 'Item sem descrição';
+      // Find item name by checking previous lines
+      let rawName = 'Item sem descrição';
+      let code = '';
+
+      for (let k = i - 1; k >= Math.max(0, i - 3); k--) {
+        const candidate = lines[k];
+        if (
+          !candidate.toLowerCase().includes('qtde') &&
+          !candidate.toLowerCase().includes('vl. total') &&
+          !candidate.toLowerCase().includes('documento')
+        ) {
+          const codeMatch = candidate.match(/\(C[oó]digo:\s*([^\)]+)\)/i);
+          if (codeMatch) code = codeMatch[1].trim();
+          const cleanCandidate = candidate.replace(/\(C[oó]digo:[^\)]+\)/i, '').trim();
+          if (cleanCandidate) {
+            rawName = cleanCandidate;
+            break;
+          }
+        }
+      }
+
       const quantity = parseFloat(itemDetailsMatch[1].replace(',', '.')) || 1;
       const unit = itemDetailsMatch[2] || 'UN';
       const unitPrice = parseFloat(itemDetailsMatch[3].replace(',', '.')) || 0;
-      const totalPrice = parseFloat(itemDetailsMatch[4].replace(',', '.')) || quantity * unitPrice;
+
+      let totalPrice = itemDetailsMatch[4] ? parseFloat(itemDetailsMatch[4].replace(',', '.')) : 0;
+
+      // If totalPrice was on the next line (e.g. line i+1 is "5,39")
+      if (!totalPrice && i + 1 < lines.length) {
+        const nextLineVal = lines[i + 1].trim();
+        if (/^[\d.,]+$/.test(nextLineVal)) {
+          totalPrice = parseFloat(nextLineVal.replace(',', '.')) || 0;
+        }
+      }
+
+      if (!totalPrice) {
+        totalPrice = quantity * unitPrice;
+      }
 
       const category = guessCategory(rawName);
       const specs = guessPackageSpecs(rawName, unit, quantity, unitPrice, totalPrice);
 
       items.push({
         rawName,
-        code: codeMatch ? codeMatch[1].trim() : '',
+        code,
         quantity,
         unit,
         unitPrice: unitPrice > 0 ? unitPrice : (quantity > 0 ? totalPrice / quantity : totalPrice),
