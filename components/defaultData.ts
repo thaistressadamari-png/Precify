@@ -1,8 +1,10 @@
-import type { Ingredient, Packaging, AppSettings, Recipe } from '../types';
+import type { Ingredient, Packaging, Equipment, AppSettings, Recipe } from '../types';
 
 export const defaultIngredients: Ingredient[] = [];
 
 export const defaultPackaging: Packaging[] = [];
+
+export const defaultEquipment: Equipment[] = [];
 
 export const defaultSettings: AppSettings = {
   laborCostPerHour: 20.00,

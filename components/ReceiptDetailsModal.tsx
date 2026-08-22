@@ -105,9 +105,17 @@ export const ReceiptDetailsModal: React.FC<ReceiptDetailsModalProps> = ({
                           ? 'bg-rose-100 dark:bg-rose-900/40 text-brand-primary dark:text-rose-200'
                           : item.category === 'packaging'
                           ? 'bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300'
+                          : item.category === 'equipment'
+                          ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300'
                           : 'bg-gray-100 text-gray-600'
                       }`}>
-                        {item.category === 'ingredient' ? '🥣 Ingrediente' : item.category === 'packaging' ? '📦 Embalagem' : 'Ignorado'}
+                        {item.category === 'ingredient'
+                          ? '🥣 Ingrediente'
+                          : item.category === 'packaging'
+                          ? '📦 Embalagem'
+                          : item.category === 'equipment'
+                          ? '🍳 Equipamento'
+                          : 'Ignorado'}
                       </span>
                     </td>
                     <td className="p-3 text-right text-gray-600 dark:text-gray-300">

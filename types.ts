@@ -88,6 +88,16 @@ export interface Packaging {
   unit: PackagingUnit;
 }
 
+export interface Equipment {
+  id: string;
+  name: string;
+  price: number;
+  quantity: number;
+  supplier?: string;
+  purchaseDate?: string;
+  notes?: string;
+}
+
 export interface RecipeIngredient {
   id: string;
   ingredientId: string;
@@ -135,7 +145,7 @@ export interface AppSettings {
   ingredientOutdatedDays: number;
 }
 
-export type Page = 'dashboard' | 'purchases' | 'ingredients' | 'packaging' | 'recipes' | 'settings' | 'recipe-pricer' | 'recipe-details' | 'ingredient-form' | 'packaging-form' | 'ingredient-details' | 'fillings' | 'filling-pricer' | 'filling-details' | 'support';
+export type Page = 'dashboard' | 'purchases' | 'ingredients' | 'packaging' | 'equipment' | 'recipes' | 'settings' | 'recipe-pricer' | 'recipe-details' | 'ingredient-form' | 'packaging-form' | 'equipment-form' | 'ingredient-details' | 'fillings' | 'filling-pricer' | 'filling-details' | 'support';
 
 export interface InvoicePurchaseItem {
   id: string;
@@ -145,12 +155,12 @@ export interface InvoicePurchaseItem {
   unit: string;
   unitPrice: number;
   totalPrice: number;
-  category: 'ingredient' | 'packaging' | 'ignore';
+  category: 'ingredient' | 'packaging' | 'equipment' | 'ignore';
   linkType: 'new' | 'existing';
-  existingTargetId?: string; // ID of existing ingredient or packaging
+  existingTargetId?: string; // ID of existing ingredient, packaging or equipment
   targetName: string;
   packageAmount: number;
-  targetUnit: Unit | PackagingUnit;
+  targetUnit: Unit | PackagingUnit | 'un';
   packagePrice: number;
 }
 

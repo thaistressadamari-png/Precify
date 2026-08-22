@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import type { Ingredient, Packaging, InvoiceReceipt, InvoicePurchaseItem, Unit, PackagingUnit } from '../types';
+import type { Ingredient, Packaging, Equipment, InvoiceReceipt, InvoicePurchaseItem, Unit, PackagingUnit } from '../types';
 import { CameraIcon } from './icons/CameraIcon';
 import { QrCodeIcon } from './icons/QrCodeIcon';
 import { ArrowUpTrayIcon } from './icons/ArrowUpTrayIcon';
@@ -29,13 +29,16 @@ interface PurchasesManagerProps {
   receipts: InvoiceReceipt[];
   ingredients: Ingredient[];
   packaging: Packaging[];
+  equipment?: Equipment[];
   onSaveReceipt: (receipt: InvoiceReceipt) => void;
   onDeleteReceipt: (receiptId: string) => void;
   onBatchUpdateCatalog: (
     newIngredients: Ingredient[],
     updatedIngredients: Ingredient[],
     newPackaging: Packaging[],
-    updatedPackaging: Packaging[]
+    updatedPackaging: Packaging[],
+    newEquipment?: Equipment[],
+    updatedEquipment?: Equipment[]
   ) => void;
 }
 
@@ -43,6 +46,7 @@ export const PurchasesManager: React.FC<PurchasesManagerProps> = ({
   receipts,
   ingredients,
   packaging,
+  equipment = [],
   onSaveReceipt,
   onDeleteReceipt,
   onBatchUpdateCatalog
@@ -451,10 +455,12 @@ export const PurchasesManager: React.FC<PurchasesManagerProps> = ({
     newIngs: Ingredient[],
     updatedIngs: Ingredient[],
     newPkgs: Packaging[],
-    updatedPkgs: Packaging[]
+    updatedPkgs: Packaging[],
+    newEquips?: Equipment[],
+    updatedEquips?: Equipment[]
   ) => {
     onSaveReceipt(finalReceipt);
-    onBatchUpdateCatalog(newIngs, updatedIngs, newPkgs, updatedPkgs);
+    onBatchUpdateCatalog(newIngs, updatedIngs, newPkgs, updatedPkgs, newEquips, updatedEquips);
     setIsReviewModalOpen(false);
     setCurrentParsedReceipt(null);
   };
@@ -1050,6 +1056,7 @@ export const PurchasesManager: React.FC<PurchasesManagerProps> = ({
           initialReceipt={currentParsedReceipt}
           existingIngredients={ingredients}
           existingPackaging={packaging}
+          existingEquipment={equipment}
           onConfirm={handleConfirmReview}
         />
       )}

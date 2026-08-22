@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import type { Ingredient, Packaging, InvoiceReceipt, InvoicePurchaseItem, Unit, PackagingUnit } from '../types';
+import type { Ingredient, Packaging, Equipment, InvoiceReceipt, InvoicePurchaseItem, Unit, PackagingUnit } from '../types';
 import { XMarkIcon } from './icons/XMarkIcon';
 import { CheckCircleIcon } from './icons/CheckCircleIcon';
 import { PlusIcon } from './icons/PlusIcon';
@@ -16,12 +16,15 @@ interface ReviewReceiptModalProps {
   initialReceipt: Partial<InvoiceReceipt>;
   existingIngredients: Ingredient[];
   existingPackaging: Packaging[];
+  existingEquipment?: Equipment[];
   onConfirm: (
     receipt: InvoiceReceipt,
     newIngredients: Ingredient[],
     updatedIngredients: Ingredient[],
     newPackaging: Packaging[],
-    updatedPackaging: Packaging[]
+    updatedPackaging: Packaging[],
+    newEquipment?: Equipment[],
+    updatedEquipment?: Equipment[]
   ) => void;
 }
 
@@ -31,6 +34,7 @@ export const ReviewReceiptModal: React.FC<ReviewReceiptModalProps> = ({
   initialReceipt,
   existingIngredients,
   existingPackaging,
+  existingEquipment = [],
   onConfirm
 }) => {
   const [supplier, setSupplier] = useState<string>(initialReceipt.supplier || 'Supermercado / Loja');
@@ -54,15 +58,35 @@ export const ReviewReceiptModal: React.FC<ReviewReceiptModalProps> = ({
   const [items, setItems] = useState<InvoicePurchaseItem[]>(() => {
     const rawItems = initialReceipt.items || [];
     return rawItems.map((item, index) => {
-      const bestMatch = findBestMatch(
-        item.rawName,
-        item.category === 'packaging' ? 'packaging' : 'ingredient',
-        existingIngredients,
-        existingPackaging
-      );
+      let isLinkExisting = false;
+      let existingTargetId: string | undefined = undefined;
+      let targetName = item.targetName || item.rawName;
+      let category = item.category || 'ingredient';
 
-      const isLinkExisting = !!bestMatch;
-      const targetUnit = (item.targetUnit || 'g') as Unit | PackagingUnit;
+      if (category === 'equipment') {
+        const equipMatch = existingEquipment.find(
+          (e) => e.name.toLowerCase().trim() === item.rawName.toLowerCase().trim()
+        );
+        if (equipMatch) {
+          isLinkExisting = true;
+          existingTargetId = equipMatch.id;
+          targetName = equipMatch.name;
+        }
+      } else {
+        const bestMatch = findBestMatch(
+          item.rawName,
+          category === 'packaging' ? 'packaging' : 'ingredient',
+          existingIngredients,
+          existingPackaging
+        );
+        if (bestMatch) {
+          isLinkExisting = true;
+          existingTargetId = bestMatch.id;
+          targetName = bestMatch.name;
+        }
+      }
+
+      const targetUnit = (item.targetUnit || (category === 'packaging' || category === 'equipment' ? 'un' : 'g')) as Unit | PackagingUnit | 'un';
 
       return {
         id: item.id || `item-${Date.now()}-${index}`,
@@ -72,11 +96,11 @@ export const ReviewReceiptModal: React.FC<ReviewReceiptModalProps> = ({
         unit: item.unit || 'UN',
         unitPrice: item.unitPrice || item.packagePrice || 0,
         totalPrice: item.totalPrice || item.packagePrice || 0,
-        category: item.category || 'ingredient',
+        category: category,
         linkType: isLinkExisting ? 'existing' : 'new',
-        existingTargetId: isLinkExisting ? bestMatch?.id : undefined,
-        targetName: isLinkExisting ? (bestMatch?.name || item.rawName) : item.targetName || item.rawName,
-        packageAmount: item.packageAmount || 1,
+        existingTargetId: existingTargetId,
+        targetName: targetName,
+        packageAmount: item.packageAmount || (category === 'equipment' ? (item.quantity || 1) : 1),
         targetUnit: targetUnit,
         packagePrice: item.packagePrice || item.totalPrice || item.unitPrice || 0
       };
@@ -104,6 +128,20 @@ export const ReviewReceiptModal: React.FC<ReviewReceiptModalProps> = ({
               updated.linkType = 'existing';
               updated.existingTargetId = match.id;
               updated.targetName = match.name;
+            } else {
+              updated.linkType = 'new';
+              updated.existingTargetId = undefined;
+            }
+          } else if (updated.category === 'equipment') {
+            updated.targetUnit = 'un';
+            updated.packageAmount = item.quantity || 1;
+            const equipMatch = existingEquipment.find(
+              (e) => e.name.toLowerCase().trim() === updated.rawName.toLowerCase().trim()
+            );
+            if (equipMatch) {
+              updated.linkType = 'existing';
+              updated.existingTargetId = equipMatch.id;
+              updated.targetName = equipMatch.name;
             } else {
               updated.linkType = 'new';
               updated.existingTargetId = undefined;
@@ -140,6 +178,15 @@ export const ReviewReceiptModal: React.FC<ReviewReceiptModalProps> = ({
               updated.targetUnit = found.unit;
               if (!updates.packageAmount) {
                 updated.packageAmount = found.amount;
+              }
+            }
+          } else if (updated.category === 'equipment') {
+            const found = existingEquipment.find((e) => e.id === updates.existingTargetId);
+            if (found) {
+              updated.targetName = found.name;
+              updated.targetUnit = 'un';
+              if (!updates.packageAmount) {
+                updated.packageAmount = found.quantity || 1;
               }
             }
           }
@@ -180,6 +227,8 @@ export const ReviewReceiptModal: React.FC<ReviewReceiptModalProps> = ({
   const linkedIngredientsCount = items.filter((i) => i.category === 'ingredient' && i.linkType === 'existing').length;
   const newPackagingCount = items.filter((i) => i.category === 'packaging' && i.linkType === 'new').length;
   const linkedPackagingCount = items.filter((i) => i.category === 'packaging' && i.linkType === 'existing').length;
+  const newEquipmentCount = items.filter((i) => i.category === 'equipment' && i.linkType === 'new').length;
+  const linkedEquipmentCount = items.filter((i) => i.category === 'equipment' && i.linkType === 'existing').length;
 
   const handleConfirmAll = () => {
     const validItems = items.filter((i) => i.category !== 'ignore');
@@ -193,10 +242,13 @@ export const ReviewReceiptModal: React.FC<ReviewReceiptModalProps> = ({
     const updatedIngredients: Ingredient[] = [];
     const newPackaging: Packaging[] = [];
     const updatedPackaging: Packaging[] = [];
+    const newEquipment: Equipment[] = [];
+    const updatedEquipment: Equipment[] = [];
 
     // Clone current lists
     const currentIngredientsMap = new Map<string, Ingredient>(existingIngredients.map((i) => [i.id, { ...i }]));
     const currentPackagingMap = new Map<string, Packaging>(existingPackaging.map((p) => [p.id, { ...p }]));
+    const currentEquipmentMap = new Map<string, Equipment>(existingEquipment.map((e) => [e.id, { ...e }]));
 
     validItems.forEach((item) => {
       const packagePrice = item.packagePrice > 0 ? item.packagePrice : item.totalPrice;
@@ -276,6 +328,32 @@ export const ReviewReceiptModal: React.FC<ReviewReceiptModalProps> = ({
           currentPackagingMap.set(newId, createdPkg);
           newPackaging.push(createdPkg);
         }
+      } else if (item.category === 'equipment') {
+        if (item.linkType === 'existing' && item.existingTargetId && currentEquipmentMap.has(item.existingTargetId)) {
+          const equip = currentEquipmentMap.get(item.existingTargetId)!;
+          const updatedEquip: Equipment = {
+            ...equip,
+            price: packagePrice,
+            quantity: packageAmount,
+            supplier: supplier || equip.supplier,
+            purchaseDate: date || equip.purchaseDate
+          };
+          currentEquipmentMap.set(item.existingTargetId, updatedEquip);
+          updatedEquipment.push(updatedEquip);
+        } else {
+          // New Equipment
+          const newId = `equip-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+          const createdEquip: Equipment = {
+            id: newId,
+            name: item.targetName || item.rawName,
+            price: packagePrice,
+            quantity: packageAmount,
+            supplier: supplier,
+            purchaseDate: date
+          };
+          currentEquipmentMap.set(newId, createdEquip);
+          newEquipment.push(createdEquip);
+        }
       }
     });
 
@@ -309,7 +387,7 @@ export const ReviewReceiptModal: React.FC<ReviewReceiptModalProps> = ({
       createdAt: new Date().toISOString()
     };
 
-    onConfirm(finalReceipt, newIngredients, updatedIngredients, newPackaging, updatedPackaging);
+    onConfirm(finalReceipt, newIngredients, updatedIngredients, newPackaging, updatedPackaging, newEquipment, updatedEquipment);
   };
 
   return createPortal(
@@ -433,6 +511,7 @@ export const ReviewReceiptModal: React.FC<ReviewReceiptModalProps> = ({
             const isIgnore = item.category === 'ignore';
             const isPackaging = item.category === 'packaging';
             const isIngredient = item.category === 'ingredient';
+            const isEquipment = item.category === 'equipment';
             const searchVal = (searchFilter[item.id] || '').toLowerCase().trim();
 
             const filteredIngredients = existingIngredients.filter((ing) =>
@@ -440,6 +519,9 @@ export const ReviewReceiptModal: React.FC<ReviewReceiptModalProps> = ({
             );
             const filteredPackaging = existingPackaging.filter((pkg) =>
               !searchVal || pkg.name.toLowerCase().includes(searchVal)
+            );
+            const filteredEquipment = existingEquipment.filter((equip) =>
+              !searchVal || equip.name.toLowerCase().includes(searchVal)
             );
 
             return (
@@ -517,6 +599,7 @@ export const ReviewReceiptModal: React.FC<ReviewReceiptModalProps> = ({
                     >
                       <option value="ingredient">🥣 Ingrediente</option>
                       <option value="packaging">📦 Embalagem</option>
+                      <option value="equipment">🍳 Equipamento</option>
                       <option value="ignore">❌ Ignorar</option>
                     </select>
                   </div>
@@ -542,6 +625,9 @@ export const ReviewReceiptModal: React.FC<ReviewReceiptModalProps> = ({
                               } else if (isPackaging && existingPackaging.length > 0) {
                                 targetId = existingPackaging[0].id;
                                 targetName = existingPackaging[0].name;
+                              } else if (isEquipment && existingEquipment.length > 0) {
+                                targetId = existingEquipment[0].id;
+                                targetName = existingEquipment[0].name;
                               }
                             }
 
@@ -603,7 +689,7 @@ export const ReviewReceiptModal: React.FC<ReviewReceiptModalProps> = ({
                               className="w-full h-8 px-2 text-xs bg-white dark:bg-gray-700 border border-blue-300 dark:border-blue-600 rounded font-medium text-blue-950 dark:text-blue-100 focus:ring-1 focus:ring-blue-500 outline-none truncate"
                             >
                               <option value="" disabled>
-                                Selecione ({isIngredient ? filteredIngredients.length : filteredPackaging.length} encontrados)...
+                                Selecione ({isIngredient ? filteredIngredients.length : isPackaging ? filteredPackaging.length : filteredEquipment.length} encontrados)...
                               </option>
                               {isIngredient &&
                                 filteredIngredients.map((ing) => (
@@ -617,6 +703,12 @@ export const ReviewReceiptModal: React.FC<ReviewReceiptModalProps> = ({
                                     {pkg.name} ({pkg.amount}{pkg.unit} - {formatCurrency(pkg.price)})
                                   </option>
                                 ))}
+                              {isEquipment &&
+                                filteredEquipment.map((equip) => (
+                                  <option key={equip.id} value={equip.id}>
+                                    {equip.name} ({equip.quantity || 1}un - {formatCurrency(equip.price)})
+                                  </option>
+                                ))}
                             </select>
                           </div>
                         )}
@@ -625,9 +717,9 @@ export const ReviewReceiptModal: React.FC<ReviewReceiptModalProps> = ({
                       {/* Qtd. Embalagem & Unidade (col-span-12 no mobile, col-span-3 no desktop) */}
                       <div className="col-span-12 sm:col-span-3">
                         <label className="block text-[10px] font-bold uppercase text-brand-light-text dark:text-gray-400 tracking-wider mb-1">
-                          Qtd. Emb. & Unid.
+                          {isEquipment ? 'Quantidade' : 'Qtd. Emb. & Unid.'}
                         </label>
-                        <div className="grid grid-cols-2 gap-1.5">
+                        <div className={isEquipment ? 'w-full' : 'grid grid-cols-2 gap-1.5'}>
                           <input
                             type="number"
                             step="any"
@@ -638,28 +730,30 @@ export const ReviewReceiptModal: React.FC<ReviewReceiptModalProps> = ({
                             className="w-full h-8 px-2 text-xs text-center bg-rose-50/40 dark:bg-gray-700 border border-rose-200 dark:border-gray-600 rounded-lg font-semibold text-brand-text dark:text-gray-100 focus:bg-white focus:border-brand-primary focus:ring-1 focus:ring-brand-primary outline-none transition"
                             placeholder="Qtd"
                           />
-                          <select
-                            value={item.targetUnit}
-                            onChange={(e) => handleItemChange(item.id, { targetUnit: e.target.value as any })}
-                            className="w-full h-8 px-2 text-xs bg-rose-50/40 dark:bg-gray-700 border border-rose-200 dark:border-gray-600 rounded-lg font-semibold text-brand-text dark:text-gray-100 focus:bg-white focus:border-brand-primary focus:ring-1 focus:ring-brand-primary outline-none transition"
-                          >
-                            {isIngredient ? (
-                              <>
-                                <option value="g">g</option>
-                                <option value="kg">kg</option>
-                                <option value="ml">ml</option>
-                                <option value="l">l</option>
-                                <option value="un">un</option>
-                              </>
-                            ) : (
-                              <>
-                                <option value="un">un</option>
-                                <option value="pacote">pct</option>
-                                <option value="rolo">rolo</option>
-                                <option value="m">m</option>
-                              </>
-                            )}
-                          </select>
+                          {!isEquipment && (
+                            <select
+                              value={item.targetUnit}
+                              onChange={(e) => handleItemChange(item.id, { targetUnit: e.target.value as any })}
+                              className="w-full h-8 px-2 text-xs bg-rose-50/40 dark:bg-gray-700 border border-rose-200 dark:border-gray-600 rounded-lg font-semibold text-brand-text dark:text-gray-100 focus:bg-white focus:border-brand-primary focus:ring-1 focus:ring-brand-primary outline-none transition"
+                            >
+                              {isIngredient ? (
+                                <>
+                                  <option value="g">g</option>
+                                  <option value="kg">kg</option>
+                                  <option value="ml">ml</option>
+                                  <option value="l">l</option>
+                                  <option value="un">un</option>
+                                </>
+                              ) : (
+                                <>
+                                  <option value="un">un</option>
+                                  <option value="pacote">pct</option>
+                                  <option value="rolo">rolo</option>
+                                  <option value="m">m</option>
+                                </>
+                              )}
+                            </select>
+                          )}
                         </div>
                       </div>
                     </>
@@ -691,10 +785,10 @@ export const ReviewReceiptModal: React.FC<ReviewReceiptModalProps> = ({
         >
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="px-2 py-1 bg-rose-50 dark:bg-rose-950/40 text-brand-primary dark:text-rose-300 border border-rose-200 dark:border-rose-800 rounded-md font-bold text-[11px]">
-              ✨ Novos: {newIngredientsCount + newPackagingCount}
+              ✨ Novos: {newIngredientsCount + newPackagingCount + newEquipmentCount}
             </span>
             <span className="px-2 py-1 bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800 rounded-md font-bold text-[11px]">
-              🔗 Vincular: {linkedIngredientsCount + linkedPackagingCount}
+              🔗 Vincular: {linkedIngredientsCount + linkedPackagingCount + linkedEquipmentCount}
             </span>
             <span className="font-bold text-brand-text dark:text-white text-xs sm:text-sm ml-1">
               Total: {formatCurrency(calculateTotalReceipt)}

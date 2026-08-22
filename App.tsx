@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import type { Ingredient, Packaging, Recipe, AppSettings, Page, Unit, User, GlobalConfig, InvoiceReceipt } from './types';
+import type { Ingredient, Packaging, Equipment, Recipe, AppSettings, Page, Unit, User, GlobalConfig, InvoiceReceipt } from './types';
 import { IngredientManager } from './components/IngredientManager';
 import { PackagingManager } from './components/PackagingManager';
+import { EquipmentManager } from './components/EquipmentManager';
 import { PurchasesManager } from './components/PurchasesManager';
 import { Settings } from './components/Settings';
 import { Dashboard } from './components/Dashboard';
@@ -11,15 +12,17 @@ import { RecipePricer } from './components/RecipePricer';
 import { RecipeDetails } from './components/RecipeDetails';
 import { IngredientForm } from './components/IngredientForm';
 import { PackagingForm } from './components/PackagingForm';
+import { EquipmentForm } from './components/EquipmentForm';
 import { IngredientDetails } from './components/IngredientDetails';
 import { SupportSystem } from './components/SupportSystem';
-import { defaultIngredients, defaultPackaging, defaultRecipes, defaultSettings } from './components/defaultData';
+import { defaultIngredients, defaultPackaging, defaultEquipment, defaultRecipes, defaultSettings } from './components/defaultData';
 import { SunIcon } from './components/icons/SunIcon';
 import { MoonIcon } from './components/icons/MoonIcon';
 import { ChartBarIcon } from './components/icons/ChartBarIcon';
 import { ReceiptIcon } from './components/icons/ReceiptIcon';
 import { ShoppingBagIcon } from './components/icons/ShoppingBagIcon';
 import { BoxIcon } from './components/icons/BoxIcon';
+import { EquipmentIcon } from './components/icons/EquipmentIcon';
 import { BookOpenIcon } from './components/icons/BookOpenIcon';
 import { AdjustmentsHorizontalIcon } from './components/icons/AdjustmentsHorizontalIcon';
 import { QuestionMarkCircleIcon } from './components/icons/QuestionMarkCircleIcon';
@@ -75,6 +78,7 @@ const App: React.FC = () => {
   const [page, setPage] = useState<Page>('dashboard');
   const [ingredients, setIngredients] = useState<Ingredient[]>(defaultIngredients);
   const [packaging, setPackaging] = useState<Packaging[]>(defaultPackaging);
+  const [equipment, setEquipment] = useState<Equipment[]>(defaultEquipment);
   const [recipes, setRecipes] = useState<Recipe[]>(defaultRecipes);
   const [fillings, setFillings] = useState<Recipe[]>([]);
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
@@ -92,6 +96,7 @@ const App: React.FC = () => {
   const [ingredientToView, setIngredientToView] = useState<Ingredient | null>(null);
   const [highlightedIngredientId, setHighlightedIngredientId] = useState<string | null>(null);
   const [packagingToEdit, setPackagingToEdit] = useState<Packaging | null>(null);
+  const [equipmentToEdit, setEquipmentToEdit] = useState<Equipment | null>(null);
   const [isDarkMode, setIsDarkMode] = useDarkMode();
 
   const [showSubscriptionFlow, setShowSubscriptionFlow] = useState(false);
@@ -187,6 +192,7 @@ const App: React.FC = () => {
     if (!userId) {
         setIngredients(defaultIngredients);
         setPackaging(defaultPackaging);
+        setEquipment(defaultEquipment);
         setRecipes(defaultRecipes);
         setFillings([]);
         setSettings(defaultSettings);
@@ -205,6 +211,7 @@ const App: React.FC = () => {
                 const data = docSnap.data();
                 setIngredients(data.ingredients || defaultIngredients);
                 setPackaging(data.packaging || defaultPackaging);
+                setEquipment(data.equipment || defaultEquipment);
                 setRecipes(data.recipes || defaultRecipes);
                 setFillings(data.fillings || []);
                 setSettings(data.settings || defaultSettings);
@@ -253,11 +260,11 @@ const App: React.FC = () => {
   useEffect(() => {
     const handler = setTimeout(() => {
         if (userId && initialLoadComplete.current) {
-            saveData({ ingredients, packaging, recipes, fillings, settings, receipts });
+            saveData({ ingredients, packaging, equipment, recipes, fillings, settings, receipts });
         }
     }, 1500);
     return () => clearTimeout(handler);
-  }, [ingredients, packaging, recipes, fillings, settings, receipts, userId, saveData]);
+  }, [ingredients, packaging, equipment, recipes, fillings, settings, receipts, userId, saveData]);
   
   const ingredientsWithFillings = useMemo(() => {
     const fillingsAsIngredients: Ingredient[] = fillings
@@ -346,6 +353,18 @@ const App: React.FC = () => {
   };
   const handleDeletePackaging = (packagingId: string) => { setPackaging(prev => prev.filter(p => p.id !== packagingId)); };
 
+  const handleAddNewEquipment = () => { setEquipmentToEdit(null); setPage('equipment-form'); };
+  const handleEditEquipment = (item: Equipment) => { setEquipmentToEdit(item); setPage('equipment-form'); };
+  const handleSaveEquipment = (item: Equipment) => {
+    setEquipment(prev => {
+      const exists = prev.some(e => e.id === item.id);
+      if (exists) return prev.map(e => (e.id === item.id ? item : e));
+      return [...prev, item];
+    });
+    setPage('equipment'); setEquipmentToEdit(null);
+  };
+  const handleDeleteEquipment = (equipmentId: string) => { setEquipment(prev => prev.filter(e => e.id !== equipmentId)); };
+
   const handleSaveReceipt = (receipt: InvoiceReceipt) => {
     setReceipts(prev => {
       const exists = prev.some(r => r.id === receipt.id);
@@ -362,7 +381,9 @@ const App: React.FC = () => {
     newIngredients: Ingredient[],
     updatedIngredients: Ingredient[],
     newPackaging: Packaging[],
-    updatedPackaging: Packaging[]
+    updatedPackaging: Packaging[],
+    newEquipment?: Equipment[],
+    updatedEquipment?: Equipment[]
   ) => {
     if (newIngredients.length > 0 || updatedIngredients.length > 0) {
       setIngredients(prev => {
@@ -387,6 +408,21 @@ const App: React.FC = () => {
         });
         newPackaging.forEach(newItem => {
           if (!next.some(p => p.id === newItem.id)) {
+            next.push(newItem);
+          }
+        });
+        return next;
+      });
+    }
+
+    if ((newEquipment && newEquipment.length > 0) || (updatedEquipment && updatedEquipment.length > 0)) {
+      setEquipment(prev => {
+        let next = [...prev];
+        (updatedEquipment || []).forEach(updated => {
+          next = next.map(e => e.id === updated.id ? updated : e);
+        });
+        (newEquipment || []).forEach(newItem => {
+          if (!next.some(e => e.id === newItem.id)) {
             next.push(newItem);
           }
         });
@@ -440,6 +476,7 @@ const App: React.FC = () => {
             receipts={receipts}
             ingredients={ingredients}
             packaging={packaging}
+            equipment={equipment}
             onSaveReceipt={handleSaveReceipt}
             onDeleteReceipt={handleDeleteReceipt}
             onBatchUpdateCatalog={handleBatchUpdateCatalog}
@@ -449,6 +486,8 @@ const App: React.FC = () => {
         return <IngredientManager ingredients={ingredients} onAddNew={handleAddNewIngredient} onEdit={handleEditIngredient} onDelete={handleDeleteIngredient} onViewDetails={handleViewIngredientDetails} onImport={setIngredients} highlightedId={highlightedIngredientId} onHighlightComplete={() => setHighlightedIngredientId(null)} onDuplicate={(i) => handleSaveIngredient({...i, id: Date.now().toString(), name: i.name + ' (Cópia)'})} />;
       case 'packaging':
         return <PackagingManager packaging={packaging} onAddNew={handleAddNewPackaging} onEdit={handleEditPackaging} onDelete={handleDeletePackaging} onImport={setPackaging} onDuplicate={(p) => handleSavePackaging({...p, id: Date.now().toString(), name: p.name + ' (Cópia)'})} />;
+      case 'equipment':
+        return <EquipmentManager equipment={equipment} onAddNew={handleAddNewEquipment} onEdit={handleEditEquipment} onDelete={handleDeleteEquipment} onImport={setEquipment} onDuplicate={(e) => handleSaveEquipment({...e, id: Date.now().toString(), name: e.name + ' (Cópia)'})} />;
       case 'recipes':
         return <Recipes recipes={recipes} type="recipe" onAddNew={handleAddNewRecipe} onEdit={handleEditRecipe} onDelete={handleDeleteRecipe} onViewDetails={handleViewRecipeDetails} ingredients={ingredientsWithFillings} packagingItems={packaging} settings={settings} onImport={setRecipes} onDuplicate={(r) => handleSaveRecipe({...r, id: Date.now().toString(), name: r.name + ' (Cópia)'})} />;
       case 'fillings':
@@ -469,6 +508,8 @@ const App: React.FC = () => {
         return <IngredientForm onSave={handleSaveIngredient} onCancel={() => setPage('ingredients')} ingredientToEdit={ingredientToEdit} mode={ingredientFormMode} />;
       case 'packaging-form':
         return <PackagingForm onSave={handleSavePackaging} onCancel={() => setPage('packaging')} packagingToEdit={packagingToEdit} />;
+      case 'equipment-form':
+        return <EquipmentForm onSave={handleSaveEquipment} onCancel={() => setPage('equipment')} equipmentToEdit={equipmentToEdit} />;
       case 'ingredient-details':
         return ingredientToView ? <IngredientDetails ingredient={ingredientToView} onEdit={handleStartAddPurchase} onDelete={handleDeleteIngredient} onDeletePurchase={(id, pid) => setIngredients(prev => prev.map(i => i.id === id ? {...i, history: i.history.filter(h => h.id !== pid)} : i))} onClose={() => setPage('ingredients')} /> : null;
       default: return <div>Página não encontrada</div>;
@@ -480,6 +521,7 @@ const App: React.FC = () => {
     if (['filling-pricer', 'filling-details'].includes(currentPage)) return 'fillings';
     if (['ingredient-form', 'ingredient-details'].includes(currentPage)) return 'ingredients';
     if (currentPage === 'packaging-form') return 'packaging';
+    if (currentPage === 'equipment-form') return 'equipment';
     return currentPage;
   };
   const activePage = getBasePage(page);
@@ -553,6 +595,7 @@ const App: React.FC = () => {
               <NavItem label="Compras & Notas" targetPage="purchases" icon={ReceiptIcon} />
               <NavItem label="Ingredientes" targetPage="ingredients" icon={ShoppingBagIcon} />
               <NavItem label="Embalagens" targetPage="packaging" icon={BoxIcon} />
+              <NavItem label="Equipamentos" targetPage="equipment" icon={EquipmentIcon} />
               <NavItem label="Receitas" targetPage="recipes" icon={BookOpenIcon} />
               <NavItem label="Recheios" targetPage="fillings" icon={FireIcon} />
               <NavItem label="Ajustes" targetPage="settings" icon={AdjustmentsHorizontalIcon} />
