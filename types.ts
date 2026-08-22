@@ -135,4 +135,37 @@ export interface AppSettings {
   ingredientOutdatedDays: number;
 }
 
-export type Page = 'dashboard' | 'ingredients' | 'packaging' | 'recipes' | 'settings' | 'recipe-pricer' | 'recipe-details' | 'ingredient-form' | 'packaging-form' | 'ingredient-details' | 'fillings' | 'filling-pricer' | 'filling-details' | 'support';
+export type Page = 'dashboard' | 'purchases' | 'ingredients' | 'packaging' | 'recipes' | 'settings' | 'recipe-pricer' | 'recipe-details' | 'ingredient-form' | 'packaging-form' | 'ingredient-details' | 'fillings' | 'filling-pricer' | 'filling-details' | 'support';
+
+export interface InvoicePurchaseItem {
+  id: string;
+  rawName: string;
+  code?: string;
+  quantity: number;
+  unit: string;
+  unitPrice: number;
+  totalPrice: number;
+  category: 'ingredient' | 'packaging' | 'ignore';
+  linkType: 'new' | 'existing';
+  existingTargetId?: string; // ID of existing ingredient or packaging
+  targetName: string;
+  packageAmount: number;
+  targetUnit: Unit | PackagingUnit;
+  packagePrice: number;
+}
+
+export interface InvoiceReceipt {
+  id: string;
+  date: string;
+  supplier: string;
+  cnpj?: string;
+  accessKey?: string;
+  nfcNumber?: string;
+  series?: string;
+  totalAmount: number;
+  paymentMethod?: string;
+  items: InvoicePurchaseItem[];
+  notes?: string;
+  createdAt: string;
+}
+

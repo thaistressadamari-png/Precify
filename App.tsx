@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import type { Ingredient, Packaging, Recipe, AppSettings, Page, Unit, User, GlobalConfig } from './types';
+import type { Ingredient, Packaging, Recipe, AppSettings, Page, Unit, User, GlobalConfig, InvoiceReceipt } from './types';
 import { IngredientManager } from './components/IngredientManager';
 import { PackagingManager } from './components/PackagingManager';
+import { PurchasesManager } from './components/PurchasesManager';
 import { Settings } from './components/Settings';
 import { Dashboard } from './components/Dashboard';
 import { Recipes } from './components/Recipes';
@@ -16,6 +17,7 @@ import { defaultIngredients, defaultPackaging, defaultRecipes, defaultSettings }
 import { SunIcon } from './components/icons/SunIcon';
 import { MoonIcon } from './components/icons/MoonIcon';
 import { ChartBarIcon } from './components/icons/ChartBarIcon';
+import { ReceiptIcon } from './components/icons/ReceiptIcon';
 import { ShoppingBagIcon } from './components/icons/ShoppingBagIcon';
 import { BoxIcon } from './components/icons/BoxIcon';
 import { BookOpenIcon } from './components/icons/BookOpenIcon';
@@ -76,6 +78,7 @@ const App: React.FC = () => {
   const [recipes, setRecipes] = useState<Recipe[]>(defaultRecipes);
   const [fillings, setFillings] = useState<Recipe[]>([]);
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
+  const [receipts, setReceipts] = useState<InvoiceReceipt[]>([]);
   
   const [view, setView] = useState<'landing' | 'login' | 'register'>('landing');
   
@@ -187,6 +190,7 @@ const App: React.FC = () => {
         setRecipes(defaultRecipes);
         setFillings([]);
         setSettings(defaultSettings);
+        setReceipts([]);
         initialLoadComplete.current = false;
         setDataLoading(false);
         return;
@@ -204,6 +208,7 @@ const App: React.FC = () => {
                 setRecipes(data.recipes || defaultRecipes);
                 setFillings(data.fillings || []);
                 setSettings(data.settings || defaultSettings);
+                setReceipts(data.receipts || []);
             }
             initialLoadComplete.current = true;
         } catch (error) {
@@ -224,11 +229,11 @@ const App: React.FC = () => {
   useEffect(() => {
     const handler = setTimeout(() => {
         if (userId && initialLoadComplete.current) {
-            saveData({ ingredients, packaging, recipes, fillings, settings });
+            saveData({ ingredients, packaging, recipes, fillings, settings, receipts });
         }
     }, 1500);
     return () => clearTimeout(handler);
-  }, [ingredients, packaging, recipes, fillings, settings, userId, saveData]);
+  }, [ingredients, packaging, recipes, fillings, settings, receipts, userId, saveData]);
   
   const ingredientsWithFillings = useMemo(() => {
     const fillingsAsIngredients: Ingredient[] = fillings
@@ -317,6 +322,55 @@ const App: React.FC = () => {
   };
   const handleDeletePackaging = (packagingId: string) => { setPackaging(prev => prev.filter(p => p.id !== packagingId)); };
 
+  const handleSaveReceipt = (receipt: InvoiceReceipt) => {
+    setReceipts(prev => {
+      const exists = prev.some(r => r.id === receipt.id);
+      if (exists) return prev.map(r => r.id === receipt.id ? receipt : r);
+      return [receipt, ...prev];
+    });
+  };
+
+  const handleDeleteReceipt = (receiptId: string) => {
+    setReceipts(prev => prev.filter(r => r.id !== receiptId));
+  };
+
+  const handleBatchUpdateCatalog = (
+    newIngredients: Ingredient[],
+    updatedIngredients: Ingredient[],
+    newPackaging: Packaging[],
+    updatedPackaging: Packaging[]
+  ) => {
+    if (newIngredients.length > 0 || updatedIngredients.length > 0) {
+      setIngredients(prev => {
+        let next = [...prev];
+        updatedIngredients.forEach(updated => {
+          next = next.map(i => i.id === updated.id ? updated : i);
+        });
+        newIngredients.forEach(newItem => {
+          if (!next.some(i => i.id === newItem.id)) {
+            next.push(newItem);
+          }
+        });
+        return next;
+      });
+    }
+
+    if (newPackaging.length > 0 || updatedPackaging.length > 0) {
+      setPackaging(prev => {
+        let next = [...prev];
+        updatedPackaging.forEach(updated => {
+          next = next.map(p => p.id === updated.id ? updated : p);
+        });
+        newPackaging.forEach(newItem => {
+          if (!next.some(p => p.id === newItem.id)) {
+            next.push(newItem);
+          }
+        });
+        return next;
+      });
+    }
+  };
+
   const handleLogout = () => signOut(auth).catch(console.error);
   
   const handleUserUpdate = async (updatedData: any) => {
@@ -356,6 +410,17 @@ const App: React.FC = () => {
     switch (page) {
       case 'dashboard':
         return <Dashboard ingredients={ingredients} recipes={recipes} fillings={fillings} packaging={packaging} settings={settings} setPage={setPage} onGoToEditRecipe={handleEditRecipe} onGoToEditIngredient={handleStartAddPurchase} />;
+      case 'purchases':
+        return (
+          <PurchasesManager
+            receipts={receipts}
+            ingredients={ingredients}
+            packaging={packaging}
+            onSaveReceipt={handleSaveReceipt}
+            onDeleteReceipt={handleDeleteReceipt}
+            onBatchUpdateCatalog={handleBatchUpdateCatalog}
+          />
+        );
       case 'ingredients':
         return <IngredientManager ingredients={ingredients} onAddNew={handleAddNewIngredient} onEdit={handleEditIngredient} onDelete={handleDeleteIngredient} onViewDetails={handleViewIngredientDetails} onImport={setIngredients} highlightedId={highlightedIngredientId} onHighlightComplete={() => setHighlightedIngredientId(null)} onDuplicate={(i) => handleSaveIngredient({...i, id: Date.now().toString(), name: i.name + ' (Cópia)'})} />;
       case 'packaging':
@@ -430,6 +495,7 @@ const App: React.FC = () => {
           <aside className="lg:col-span-2 mb-8 lg:mb-0">
             <nav className="flex lg:flex-col justify-around lg:justify-start lg:space-y-2 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-2 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700">
                 <NavItem label="Dashboard" targetPage="dashboard" icon={ChartBarIcon}/>
+                <NavItem label="Compras" targetPage="purchases" icon={ReceiptIcon}/>
                 <NavItem label="Ingredientes" targetPage="ingredients" icon={ShoppingBagIcon}/>
                 <NavItem label="Embalagens" targetPage="packaging" icon={BoxIcon}/>
                 <NavItem label="Receitas" targetPage="recipes" icon={BookOpenIcon}/>
