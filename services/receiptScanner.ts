@@ -23,6 +23,56 @@ export interface ParsedReceiptData {
   }>;
 }
 
+// Fast client-side image compression to speed up OCR and network transfers from ~15MB to ~250KB
+export const compressImageForOcr = async (
+  imageFileOrBase64: File | string,
+  maxDimension: number = 1600,
+  quality: number = 0.82
+): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'Anonymous';
+    img.onload = () => {
+      try {
+        let { width, height } = img;
+        if (width > maxDimension || height > maxDimension) {
+          if (width > height) {
+            height = Math.round((height * maxDimension) / width);
+            width = maxDimension;
+          } else {
+            width = Math.round((width * maxDimension) / height);
+            height = maxDimension;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          throw new Error('Canvas 2D context não disponível');
+        }
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+        const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+        const base64Only = compressedDataUrl.split(',')[1];
+        resolve(base64Only);
+      } catch (err) {
+        reject(err);
+      }
+    };
+    img.onerror = (err) => reject(err);
+
+    if (typeof imageFileOrBase64 === 'string') {
+      img.src = imageFileOrBase64.startsWith('data:')
+        ? imageFileOrBase64
+        : `data:image/jpeg;base64,${imageFileOrBase64}`;
+    } else {
+      img.src = URL.createObjectURL(imageFileOrBase64);
+    }
+  });
+};
+
 // Convert file or image to base64
 export const fileToBase64 = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -36,31 +86,94 @@ export const fileToBase64 = (file: File): Promise<string> => {
   });
 };
 
-// Scan QR code from an image or file using jsQR on a canvas
+// Helper to run jsQR on image data with options
+const tryDecodeImageData = (ctx: CanvasRenderingContext2D, width: number, height: number): string | null => {
+  try {
+    const imageData = ctx.getImageData(0, 0, width, height);
+    const code = jsQR(imageData.data, imageData.width, imageData.height, {
+      inversionAttempts: 'attemptBoth'
+    });
+    return code && code.data && code.data.trim().length > 0 ? code.data : null;
+  } catch {
+    return null;
+  }
+};
+
+// Multi-pass high-accuracy QR code scanner for receipts and photos
 export const scanQrFromImage = async (imageFileOrBase64: File | string): Promise<string | null> => {
   return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = 'Anonymous';
     img.onload = () => {
       try {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          resolve(null);
-          return;
+        const originalWidth = img.width;
+        const originalHeight = img.height;
+
+        // Pass 1: Try multiple target scales (1000px, 600px, full scale)
+        const targetScales = [1000, 600, 1400, originalWidth];
+        for (const targetMax of targetScales) {
+          let w = originalWidth;
+          let h = originalHeight;
+          if (w > targetMax || h > targetMax) {
+            if (w > h) {
+              h = Math.round((h * targetMax) / w);
+              w = targetMax;
+            } else {
+              w = Math.round((w * targetMax) / h);
+              h = targetMax;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          if (!ctx) continue;
+
+          ctx.drawImage(img, 0, 0, w, h);
+          const found = tryDecodeImageData(ctx, w, h);
+          if (found) {
+            resolve(found);
+            return;
+          }
+
+          // Pass 2: High contrast and binarization filter
+          const imgData = ctx.getImageData(0, 0, w, h);
+          const data = imgData.data;
+          for (let i = 0; i < data.length; i += 4) {
+            // Convert to grayscale
+            const avg = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+            // High contrast stretch
+            const contrast = (avg - 128) * 1.6 + 128;
+            const finalVal = contrast > 130 ? 255 : 0; // threshold
+            data[i] = finalVal;
+            data[i + 1] = finalVal;
+            data[i + 2] = finalVal;
+          }
+          ctx.putImageData(imgData, 0, 0);
+          const foundBinarized = tryDecodeImageData(ctx, w, h);
+          if (foundBinarized) {
+            resolve(foundBinarized);
+            return;
+          }
+
+          // Pass 3: Center & Bottom crop (receipt QR codes are usually centered or at the bottom)
+          const cropH = Math.round(h * 0.6);
+          const cropY = Math.round(h * 0.4);
+          const cropCanvas = document.createElement('canvas');
+          cropCanvas.width = w;
+          cropCanvas.height = cropH;
+          const cropCtx = cropCanvas.getContext('2d', { willReadFrequently: true });
+          if (cropCtx) {
+            cropCtx.drawImage(img, 0, cropY, w, cropH, 0, 0, w, cropH);
+            const foundCrop = tryDecodeImageData(cropCtx, w, cropH);
+            if (foundCrop) {
+              resolve(foundCrop);
+              return;
+            }
+          }
         }
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const code = jsQR(imageData.data, imageData.width, imageData.height, {
-          inversionAttempts: 'attemptBoth'
-        });
-        if (code && code.data) {
-          resolve(code.data);
-        } else {
-          resolve(null);
-        }
+
+        resolve(null);
       } catch (err) {
         console.warn('Erro ao decodificar QR na imagem:', err);
         resolve(null);
@@ -197,19 +310,22 @@ export const guessPackageSpecs = (
   };
 };
 
-// Parse NFC-e QR Code String (e.g. from camera scanner)
+// Parse NFC-e QR Code String or 44-digit Access Key (e.g. from camera scanner or manual entry)
 export const parseNfceQrCode = (qrCodeString: string): Partial<ParsedReceiptData> => {
   const result: Partial<ParsedReceiptData> = {
     items: []
   };
 
-  // Check for 44-digit access key inside URL or text
-  const accessKeyMatch = qrCodeString.match(/\b\d{44}\b/) || 
+  const rawClean = qrCodeString.replace(/[\s.-]/g, '');
+
+  // Check for 44-digit access key inside URL or text or clean digits
+  const accessKeyMatch = rawClean.match(/\b\d{44}\b/) || 
                          qrCodeString.match(/[?&]p=([0-9]{44})/i) || 
                          qrCodeString.match(/p=([0-9]{44})/i) || 
                          qrCodeString.match(/[?&]chNFe=([0-9]{44})/i) ||
                          qrCodeString.match(/chNFe=([0-9]{44})/i) ||
-                         qrCodeString.match(/[?&]chave=([0-9]{44})/i);
+                         qrCodeString.match(/[?&]chave=([0-9]{44})/i) ||
+                         (rawClean.length === 44 && /^\d+$/.test(rawClean) ? [rawClean, rawClean] : null);
 
   if (accessKeyMatch) {
     result.accessKey = accessKeyMatch[1] || accessKeyMatch[0];
@@ -244,7 +360,7 @@ export const parseNfceQrCode = (qrCodeString: string): Partial<ParsedReceiptData
     if (!isNaN(vnf)) result.totalAmount = vnf;
   }
 
-  result.supplier = "Cupom Fiscal NFC-e (Lido via QR Code)";
+  result.supplier = "Cupom Fiscal NFC-e";
   return result;
 };
 
@@ -333,6 +449,17 @@ export const parseNfeXml = (xmlText: string): ParsedReceiptData => {
 // Parse Receipt Photo / Document using Server-Side Gemini API Proxy (/api/parse-receipt)
 export const parseReceiptImageWithGemini = async (imageBase64: string, mimeType: string = 'image/jpeg'): Promise<ParsedReceiptData> => {
   let response: globalThis.Response;
+  
+  // Compress image if large (e.g. > 500KB base64 string) to make network transfer instantaneous
+  let payloadBase64 = imageBase64;
+  try {
+    if (payloadBase64.length > 300000) {
+      payloadBase64 = await compressImageForOcr(imageBase64, 1600, 0.82);
+    }
+  } catch (compErr) {
+    console.warn('Erro ao comprimir imagem localmente, enviando original:', compErr);
+  }
+
   try {
     response = await fetch('/api/parse-receipt', {
       method: 'POST',
@@ -340,8 +467,8 @@ export const parseReceiptImageWithGemini = async (imageBase64: string, mimeType:
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        imageBase64,
-        mimeType
+        imageBase64: payloadBase64,
+        mimeType: 'image/jpeg'
       })
     });
   } catch (netErr: any) {

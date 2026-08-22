@@ -300,53 +300,54 @@ export const PurchasesManager: React.FC<PurchasesManagerProps> = ({
       />
 
       {/* Header with Title and Quick Actions */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
         <div>
-          <h1 className="font-display text-4xl font-bold text-brand-text dark:text-rose-100">
+          <h1 className="font-display text-2xl sm:text-4xl font-bold text-brand-text dark:text-rose-100">
             Compras & Notas Fiscais
           </h1>
-          <p className="text-sm text-brand-light-text dark:text-gray-400 mt-1">
+          <p className="text-xs sm:text-sm text-brand-light-text dark:text-gray-400 mt-1">
             Escaneie cupons fiscais, suba fotos de notas e cadastre/vincule insumos automaticamente.
           </p>
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2.5">
+        {/* Action Buttons: 2-column grid on mobile, flex on desktop */}
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2.5 w-full lg:w-auto">
           <button
             type="button"
             onClick={() => setIsCameraModalOpen(true)}
-            className="py-2.5 px-4 bg-brand-primary hover:bg-rose-600 text-white font-bold text-sm rounded-2xl shadow-lg shadow-rose-500/25 transition flex items-center gap-2"
+            className="py-3 px-4 bg-brand-primary hover:bg-rose-600 text-white font-bold text-sm rounded-2xl shadow-lg shadow-rose-500/25 transition flex items-center justify-center gap-2"
           >
-            <CameraIcon className="w-5 h-5" />
-            <span>Escanear Cupom</span>
+            <CameraIcon className="w-5 h-5 flex-shrink-0" />
+            <span className="truncate">Escanear Cupom</span>
           </button>
 
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="py-2.5 px-4 bg-white dark:bg-gray-800 hover:bg-rose-50 dark:hover:bg-gray-700 text-brand-text dark:text-rose-100 border border-rose-200 dark:border-gray-700 font-semibold text-sm rounded-2xl shadow-sm transition flex items-center gap-2"
+            className="py-3 px-4 bg-white dark:bg-gray-800 hover:bg-rose-50 dark:hover:bg-gray-700 text-brand-text dark:text-rose-100 border border-rose-200 dark:border-gray-700 font-semibold text-sm rounded-2xl shadow-sm transition flex items-center justify-center gap-2"
           >
-            <ArrowUpTrayIcon className="w-5 h-5 text-brand-primary" />
-            <span>Subir Foto / PDF</span>
+            <ArrowUpTrayIcon className="w-5 h-5 text-brand-primary flex-shrink-0" />
+            <span className="truncate">Subir Foto</span>
           </button>
 
           <button
             type="button"
             onClick={() => xmlInputRef.current?.click()}
-            className="py-2.5 px-4 bg-white dark:bg-gray-800 hover:bg-rose-50 dark:hover:bg-gray-700 text-brand-text dark:text-rose-100 border border-rose-200 dark:border-gray-700 font-semibold text-sm rounded-2xl shadow-sm transition flex items-center gap-2"
+            className="py-3 px-4 bg-white dark:bg-gray-800 hover:bg-rose-50 dark:hover:bg-gray-700 text-brand-text dark:text-rose-100 border border-rose-200 dark:border-gray-700 font-semibold text-sm rounded-2xl shadow-sm transition flex items-center justify-center gap-2"
             title="Importar arquivo XML oficial da NF-e / NFC-e"
           >
-            <DocumentArrowDownIcon className="w-5 h-5 text-purple-500" />
-            <span className="hidden sm:inline">XML Nota Fiscal</span>
+            <DocumentArrowDownIcon className="w-5 h-5 text-purple-500 flex-shrink-0" />
+            <span className="truncate">XML Nota</span>
           </button>
 
           <button
             type="button"
             onClick={handleCreateManualReceipt}
-            className="p-2.5 bg-rose-100 dark:bg-gray-700 hover:bg-rose-200 dark:hover:bg-gray-600 text-brand-primary dark:text-rose-200 rounded-2xl transition"
+            className="py-3 px-4 bg-rose-100 dark:bg-gray-700 hover:bg-rose-200 dark:hover:bg-gray-600 text-brand-primary dark:text-rose-200 font-semibold text-sm rounded-2xl transition flex items-center justify-center gap-2"
             title="Lançamento Manual de Compra"
           >
-            <PlusIcon className="w-5 h-5" />
+            <PlusIcon className="w-5 h-5 flex-shrink-0" />
+            <span className="truncate">Manual</span>
           </button>
         </div>
       </div>
@@ -641,76 +642,131 @@ export const PurchasesManager: React.FC<PurchasesManagerProps> = ({
             </div>
           </div>
         ) : (
-          /* Receipts Table */
-          <div className="overflow-x-auto rounded-2xl border border-rose-100 dark:border-gray-700">
-            <table className="w-full text-left text-xs sm:text-sm">
-              <thead className="bg-rose-50/60 dark:bg-gray-700/60 text-brand-light-text dark:text-gray-300 font-semibold border-b border-rose-100 dark:border-gray-700">
-                <tr>
-                  <th className="p-3.5">Data</th>
-                  <th className="p-3.5">Fornecedor / Loja</th>
-                  <th className="p-3.5">Insumos</th>
-                  <th className="p-3.5">Pagamento</th>
-                  <th className="p-3.5 text-right">Valor Total</th>
-                  <th className="p-3.5 text-center">Ações</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-rose-100/60 dark:divide-gray-700/60">
-                {filteredReceipts.map((receipt) => {
-                  const formattedDate = new Date(receipt.date + 'T12:00:00').toLocaleDateString('pt-BR', {
-                    day: '2-digit',
-                    month: '2-digit',
-                    year: 'numeric'
-                  });
+          <>
+            {/* Mobile Cards View (< md) */}
+            <div className="grid grid-cols-1 gap-3 md:hidden">
+              {filteredReceipts.map((receipt) => {
+                const formattedDate = new Date(receipt.date + 'T12:00:00').toLocaleDateString('pt-BR', {
+                  day: '2-digit',
+                  month: '2-digit',
+                  year: 'numeric'
+                });
 
-                  return (
-                    <tr
-                      key={receipt.id}
-                      className="hover:bg-rose-50/40 dark:hover:bg-gray-700/40 transition cursor-pointer"
-                      onClick={() => {
-                        setActiveReceiptForDetails(receipt);
-                        setIsDetailsModalOpen(true);
-                      }}
-                    >
-                      <td className="p-3.5 font-mono text-xs text-brand-light-text dark:text-gray-400">
-                        {formattedDate}
-                      </td>
-                      <td className="p-3.5 font-semibold text-brand-text dark:text-white">
-                        <div>{receipt.supplier}</div>
-                        {receipt.cnpj && (
-                          <div className="text-[11px] text-gray-400 font-mono">{receipt.cnpj}</div>
-                        )}
-                      </td>
-                      <td className="p-3.5">
-                        <span className="px-2.5 py-1 bg-rose-100/70 dark:bg-gray-700 text-brand-primary dark:text-rose-200 rounded-lg text-xs font-bold">
-                          {receipt.items.length} itens
-                        </span>
-                      </td>
-                      <td className="p-3.5 text-gray-600 dark:text-gray-300 text-xs">
-                        {receipt.paymentMethod || 'Cupom Fiscal'}
-                      </td>
-                      <td className="p-3.5 text-right font-bold text-brand-primary text-sm sm:text-base">
+                return (
+                  <div
+                    key={receipt.id}
+                    onClick={() => {
+                      setActiveReceiptForDetails(receipt);
+                      setIsDetailsModalOpen(true);
+                    }}
+                    className="p-4 bg-rose-50/40 dark:bg-gray-700/50 rounded-2xl border border-rose-100 dark:border-gray-700 space-y-3 cursor-pointer active:scale-[0.99] transition"
+                  >
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h4 className="font-bold text-base text-brand-text dark:text-white leading-tight">
+                          {receipt.supplier}
+                        </h4>
+                        <div className="text-xs text-brand-light-text dark:text-gray-400 mt-0.5">
+                          {formattedDate} • {receipt.paymentMethod || 'Cupom Fiscal'}
+                        </div>
+                      </div>
+                      <span className="font-bold text-lg text-brand-primary">
                         {formatCurrency(receipt.totalAmount)}
-                      </td>
-                      <td
-                        className="p-3.5 text-center"
-                        onClick={(e) => e.stopPropagation()}
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between items-center pt-2 border-t border-rose-100 dark:border-gray-600">
+                      <span className="px-2.5 py-1 bg-white dark:bg-gray-800 text-brand-primary dark:text-rose-200 rounded-lg text-xs font-bold border border-rose-100 dark:border-gray-700">
+                        {receipt.items.length} {receipt.items.length === 1 ? 'item' : 'itens'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveReceiptForDetails(receipt);
+                          setIsDetailsModalOpen(true);
+                        }}
+                        className="py-1.5 px-3 bg-brand-primary/10 hover:bg-brand-primary/20 text-brand-primary dark:text-rose-200 text-xs font-bold rounded-xl transition"
                       >
-                        <button
-                          onClick={() => {
-                            setActiveReceiptForDetails(receipt);
-                            setIsDetailsModalOpen(true);
-                          }}
-                          className="py-1 px-3 bg-rose-50 hover:bg-rose-100 dark:bg-gray-700 dark:hover:bg-gray-600 text-brand-primary dark:text-rose-200 text-xs font-semibold rounded-lg transition mr-1.5"
+                        Ver Detalhes →
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Desktop Table View (>= md) */}
+            <div className="hidden md:block overflow-x-auto rounded-2xl border border-rose-100 dark:border-gray-700">
+              <table className="w-full text-left text-xs sm:text-sm">
+                <thead className="bg-rose-50/60 dark:bg-gray-700/60 text-brand-light-text dark:text-gray-300 font-semibold border-b border-rose-100 dark:border-gray-700">
+                  <tr>
+                    <th className="p-3.5">Data</th>
+                    <th className="p-3.5">Fornecedor / Loja</th>
+                    <th className="p-3.5">Insumos</th>
+                    <th className="p-3.5">Pagamento</th>
+                    <th className="p-3.5 text-right">Valor Total</th>
+                    <th className="p-3.5 text-center">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-rose-100/60 dark:divide-gray-700/60">
+                  {filteredReceipts.map((receipt) => {
+                    const formattedDate = new Date(receipt.date + 'T12:00:00').toLocaleDateString('pt-BR', {
+                      day: '2-digit',
+                      month: '2-digit',
+                      year: 'numeric'
+                    });
+
+                    return (
+                      <tr
+                        key={receipt.id}
+                        className="hover:bg-rose-50/40 dark:hover:bg-gray-700/40 transition cursor-pointer"
+                        onClick={() => {
+                          setActiveReceiptForDetails(receipt);
+                          setIsDetailsModalOpen(true);
+                        }}
+                      >
+                        <td className="p-3.5 font-mono text-xs text-brand-light-text dark:text-gray-400">
+                          {formattedDate}
+                        </td>
+                        <td className="p-3.5 font-semibold text-brand-text dark:text-white">
+                          <div>{receipt.supplier}</div>
+                          {receipt.cnpj && (
+                            <div className="text-[11px] text-gray-400 font-mono">{receipt.cnpj}</div>
+                          )}
+                        </td>
+                        <td className="p-3.5">
+                          <span className="px-2.5 py-1 bg-rose-100/70 dark:bg-gray-700 text-brand-primary dark:text-rose-200 rounded-lg text-xs font-bold">
+                            {receipt.items.length} itens
+                          </span>
+                        </td>
+                        <td className="p-3.5 text-gray-600 dark:text-gray-300 text-xs">
+                          {receipt.paymentMethod || 'Cupom Fiscal'}
+                        </td>
+                        <td className="p-3.5 text-right font-bold text-brand-primary text-sm sm:text-base">
+                          {formatCurrency(receipt.totalAmount)}
+                        </td>
+                        <td
+                          className="p-3.5 text-center"
+                          onClick={(e) => e.stopPropagation()}
                         >
-                          Ver Detalhes
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                          <button
+                            onClick={() => {
+                              setActiveReceiptForDetails(receipt);
+                              setIsDetailsModalOpen(true);
+                            }}
+                            className="py-1 px-3 bg-rose-50 hover:bg-rose-100 dark:bg-gray-700 dark:hover:bg-gray-600 text-brand-primary dark:text-rose-200 text-xs font-semibold rounded-lg transition mr-1.5"
+                          >
+                            Ver Detalhes
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
 

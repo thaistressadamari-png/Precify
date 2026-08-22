@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>Precif - Precificador de Receitas</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Google Analytics (GA4) -->
@@ -16,6 +16,25 @@
       gtag('config', 'G-T9BV2M7SZD');
     </script>
     <style>
+      /* Previne zoom indesejado no Safari/iOS ao focar inputs e remove atraso de toque */
+      html, body {
+        touch-action: manipulation;
+        -webkit-text-size-adjust: 100%;
+      }
+      input, select, textarea {
+        font-size: 16px !important;
+      }
+      button, a, input, select, textarea {
+        touch-action: manipulation;
+      }
+      /* Custom scrollbar utility */
+      .no-scrollbar::-webkit-scrollbar {
+        display: none;
+      }
+      .no-scrollbar {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+      }
       @keyframes fadeIn {
         from {
           opacity: 0;

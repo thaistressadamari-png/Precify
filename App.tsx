@@ -461,8 +461,16 @@ const App: React.FC = () => {
   const activePage = getBasePage(page);
   
   const NavItem: React.FC<{ label: string; targetPage: Page; icon: React.ElementType }> = ({ label, targetPage, icon: Icon }) => (
-    <button onClick={() => setPage(targetPage)} className={`flex flex-col items-center justify-center p-2 rounded-lg text-sm font-medium transition-colors w-full text-left lg:flex-row lg:justify-start lg:gap-3 lg:px-3 lg:py-2 ${activePage === targetPage ? 'bg-brand-primary text-white' : 'text-brand-light-text dark:text-gray-400 hover:bg-rose-100 dark:hover:bg-gray-700'}`}>
-      <Icon className="w-6 h-6"/><span className={`mt-1 text-xs lg:mt-0 lg:text-base ${activePage === targetPage ? 'block' : 'hidden'} md:block`}>{label}</span>
+    <button
+      onClick={() => setPage(targetPage)}
+      className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-all whitespace-nowrap lg:w-full lg:px-4 lg:py-3 ${
+        activePage === targetPage
+          ? 'bg-brand-primary text-white shadow-md shadow-rose-500/20'
+          : 'text-brand-light-text dark:text-gray-300 hover:bg-rose-100/70 dark:hover:bg-gray-700/70'
+      }`}
+    >
+      <Icon className="w-5 h-5 flex-shrink-0" />
+      <span className="text-sm font-medium">{label}</span>
     </button>
   );
 
@@ -481,29 +489,58 @@ const App: React.FC = () => {
   if (dataLoading) return <div className="bg-rose-50 dark:bg-gray-900 min-h-screen flex flex-col items-center justify-center"><h1 className="font-display text-4xl font-bold text-brand-primary animate-pulse">Precify</h1><p className="mt-4 text-brand-light-text">Carregando seus dados...</p></div>;
 
   return (
-    <div className="bg-rose-50 dark:bg-gray-900 min-h-screen text-brand-text dark:text-gray-200 font-sans transition-colors">
-      <div className="container mx-auto px-4 py-8">
-        <header className="flex justify-between items-center mb-8 flex-wrap gap-4">
-            <h1 className="font-display text-3xl font-bold text-brand-primary">Precify</h1>
-             <div className="flex items-center gap-4">
-              <span className="text-brand-light-text dark:text-gray-300 hidden sm:block">Olá, <span className="font-semibold text-brand-text dark:text-rose-100">{activeUser.name.split(' ')[0]}</span></span>
-              {isCurrentUserAdmin && <button onClick={() => setIsAdminMode(true)} className="flex items-center gap-2 p-2 rounded-lg text-sm text-brand-light-text hover:bg-rose-100"><AdjustmentsVerticalIcon className="w-6 h-6" /><span className="hidden md:block">Painel Admin</span></button>}
-              <button onClick={() => setIsDarkMode(!isDarkMode)} className="flex items-center gap-2 p-2 rounded-lg text-sm text-brand-light-text hover:bg-rose-100">{isDarkMode ? <SunIcon className="w-6 h-6" /> : <MoonIcon className="w-6 h-6" />}</button>
-            </div>
+    <div className="bg-rose-50 dark:bg-gray-900 min-h-screen text-brand-text dark:text-gray-200 font-sans transition-colors pb-12">
+      <div className="container mx-auto px-3 sm:px-6 py-4 sm:py-8">
+        <header className="flex justify-between items-center mb-6 flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <h1 className="font-display text-2xl sm:text-3xl font-bold text-brand-primary">Precify</h1>
+            <span className="hidden sm:inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-100 dark:bg-rose-900/40 text-brand-primary dark:text-rose-200">
+              Precificador Confeitaria
+            </span>
+          </div>
+          <div className="flex items-center gap-2 sm:gap-4">
+            <span className="text-sm text-brand-light-text dark:text-gray-300">
+              Olá, <span className="font-semibold text-brand-text dark:text-rose-100">{activeUser.name.split(' ')[0]}</span>
+            </span>
+            {isCurrentUserAdmin && (
+              <button
+                onClick={() => setIsAdminMode(true)}
+                className="flex items-center gap-1.5 p-2 rounded-xl text-xs font-semibold text-brand-light-text hover:bg-rose-100 dark:hover:bg-gray-700 transition"
+              >
+                <AdjustmentsVerticalIcon className="w-5 h-5" />
+                <span className="hidden md:inline">Admin</span>
+              </button>
+            )}
+            <button
+              onClick={() => setIsDarkMode(!isDarkMode)}
+              className="p-2 rounded-xl text-brand-light-text hover:bg-rose-100 dark:hover:bg-gray-700 transition"
+              title="Alternar tema claro/escuro"
+            >
+              {isDarkMode ? <SunIcon className="w-5 h-5" /> : <MoonIcon className="w-5 h-5" />}
+            </button>
+          </div>
         </header>
+
         <div className="lg:grid lg:grid-cols-12 lg:gap-8">
-          <aside className="lg:col-span-2 mb-8 lg:mb-0">
-            <nav className="flex lg:flex-col justify-around lg:justify-start lg:space-y-2 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-2 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700">
-                <NavItem label="Dashboard" targetPage="dashboard" icon={ChartBarIcon}/>
-                <NavItem label="Compras" targetPage="purchases" icon={ReceiptIcon}/>
-                <NavItem label="Ingredientes" targetPage="ingredients" icon={ShoppingBagIcon}/>
-                <NavItem label="Embalagens" targetPage="packaging" icon={BoxIcon}/>
-                <NavItem label="Receitas" targetPage="recipes" icon={BookOpenIcon}/>
-                <NavItem label="Recheios" targetPage="fillings" icon={FireIcon}/>
-                <NavItem label="Ajustes" targetPage="settings" icon={AdjustmentsHorizontalIcon}/>
-                <NavItem label="Suporte" targetPage="support" icon={QuestionMarkCircleIcon}/>
-                 <div className="border-t border-rose-100 my-2 hidden lg:block"></div>
-                <button onClick={handleLogout} className="flex flex-col items-center justify-center p-2 rounded-lg text-sm font-medium w-full text-left lg:flex-row lg:justify-start lg:gap-3 lg:px-3 lg:py-2 text-brand-light-text hover:bg-rose-100"><ArrowRightOnRectangleIcon className="w-6 h-6"/><span className="mt-1 text-xs lg:mt-0 hidden md:block">Sair</span></button>
+          {/* Navigation - Horizontal scroll on mobile, vertical sidebar on desktop */}
+          <aside className="lg:col-span-2 mb-6 lg:mb-0">
+            <nav className="flex lg:flex-col overflow-x-auto no-scrollbar gap-1.5 sm:gap-2 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-2 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700">
+              <NavItem label="Dashboard" targetPage="dashboard" icon={ChartBarIcon} />
+              <NavItem label="Compras & Notas" targetPage="purchases" icon={ReceiptIcon} />
+              <NavItem label="Ingredientes" targetPage="ingredients" icon={ShoppingBagIcon} />
+              <NavItem label="Embalagens" targetPage="packaging" icon={BoxIcon} />
+              <NavItem label="Receitas" targetPage="recipes" icon={BookOpenIcon} />
+              <NavItem label="Recheios" targetPage="fillings" icon={FireIcon} />
+              <NavItem label="Ajustes" targetPage="settings" icon={AdjustmentsHorizontalIcon} />
+              <NavItem label="Suporte" targetPage="support" icon={QuestionMarkCircleIcon} />
+              <div className="border-t border-rose-100 dark:border-gray-700 my-1 hidden lg:block" />
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-semibold text-brand-light-text dark:text-gray-400 hover:bg-rose-100/70 dark:hover:bg-gray-700/70 transition whitespace-nowrap lg:w-full lg:px-4 lg:py-3"
+              >
+                <ArrowRightOnRectangleIcon className="w-5 h-5 flex-shrink-0" />
+                <span className="text-sm font-medium">Sair</span>
+              </button>
             </nav>
           </aside>
           <main className="lg:col-span-10">{renderPage()}</main>
