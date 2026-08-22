@@ -1,4 +1,12 @@
 import jsQR from 'jsqr';
+import {
+  MultiFormatReader,
+  BarcodeFormat,
+  DecodeHintType,
+  BinaryBitmap,
+  HybridBinarizer,
+  RGBLuminanceSource
+} from '@zxing/library';
 import type { Ingredient, Packaging, InvoiceReceipt, InvoicePurchaseItem, Unit, PackagingUnit } from '../types';
 
 export interface ParsedReceiptData {
@@ -22,6 +30,29 @@ export interface ParsedReceiptData {
     suggestedUnit?: Unit | PackagingUnit;
   }>;
 }
+
+// Initialize ZXing MultiFormatReader for 1D barcodes (Code 128 DANFE, ITF, EAN) & 2D QR
+const zxingHints = new Map<DecodeHintType, any>();
+const zxingFormats = [
+  BarcodeFormat.CODE_128,
+  BarcodeFormat.ITF,
+  BarcodeFormat.QR_CODE,
+  BarcodeFormat.EAN_13,
+  BarcodeFormat.EAN_8,
+  BarcodeFormat.CODE_39,
+  BarcodeFormat.CODE_93,
+  BarcodeFormat.UPC_A,
+  BarcodeFormat.UPC_E,
+  BarcodeFormat.DATA_MATRIX,
+  BarcodeFormat.PDF_417,
+  BarcodeFormat.AZTEC,
+  BarcodeFormat.CODABAR
+];
+zxingHints.set(DecodeHintType.POSSIBLE_FORMATS, zxingFormats);
+zxingHints.set(DecodeHintType.TRY_HARDER, true);
+
+const zxingReader = new MultiFormatReader();
+zxingReader.setHints(zxingHints);
 
 // Fast client-side image compression to speed up OCR and network transfers from ~15MB to ~250KB
 export const compressImageForOcr = async (
@@ -86,31 +117,112 @@ export const fileToBase64 = (file: File): Promise<string> => {
   });
 };
 
-// Helper to run jsQR on image data with options
-const tryDecodeImageData = (ctx: CanvasRenderingContext2D, width: number, height: number): string | null => {
+// Decode with native browser BarcodeDetector API (fastest on Chromium/Android)
+export const decodeWithNativeBarcodeDetector = async (
+  source: CanvasImageSource | ImageData
+): Promise<string | null> => {
+  if (typeof window !== 'undefined' && 'BarcodeDetector' in window) {
+    try {
+      const barcodeDetector = new (window as any).BarcodeDetector({
+        formats: [
+          'code_128',
+          'itf',
+          'qr_code',
+          'ean_13',
+          'ean_8',
+          'code_39',
+          'code_93',
+          'upc_a',
+          'upc_e',
+          'data_matrix',
+          'pdf417',
+          'aztec',
+          'codabar'
+        ]
+      });
+      const barcodes = await barcodeDetector.detect(source);
+      if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
+        return barcodes[0].rawValue.trim();
+      }
+    } catch {
+      // Fallback
+    }
+  }
+  return null;
+};
+
+// Decode with ZXing library (Code 128, ITF, EAN-13, QR Code)
+export const decodeWithZXing = (imageData: ImageData): string | null => {
   try {
-    const imageData = ctx.getImageData(0, 0, width, height);
+    const luminanceSource = new RGBLuminanceSource(
+      new Uint8ClampedArray(imageData.data.buffer),
+      imageData.width,
+      imageData.height
+    );
+    const binaryBitmap = new BinaryBitmap(new HybridBinarizer(luminanceSource));
+    const result = zxingReader.decode(binaryBitmap);
+    if (result && result.getText() && result.getText().trim().length > 0) {
+      return result.getText().trim();
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+};
+
+// Helper to run jsQR on image data
+export const decodeWithJsQr = (imageData: ImageData): string | null => {
+  try {
     const code = jsQR(imageData.data, imageData.width, imageData.height, {
       inversionAttempts: 'attemptBoth'
     });
-    return code && code.data && code.data.trim().length > 0 ? code.data : null;
+    return code && code.data && code.data.trim().length > 0 ? code.data.trim() : null;
   } catch {
     return null;
   }
 };
 
-// Multi-pass high-accuracy QR code scanner for receipts and photos
-export const scanQrFromImage = async (imageFileOrBase64: File | string): Promise<string | null> => {
+// Master single-frame decoder that runs Native BarcodeDetector + ZXing + jsQR
+export const decodeAnyBarcodeOrQrFromCanvas = async (
+  canvas: HTMLCanvasElement,
+  ctx: CanvasRenderingContext2D
+): Promise<string | null> => {
+  // 1. Try Native BarcodeDetector first (hardware accelerated, ~2ms)
+  const nativeFound = await decodeWithNativeBarcodeDetector(canvas);
+  if (nativeFound) return nativeFound;
+
+  const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+  // 2. Try ZXing MultiFormat (Code 128, ITF, EAN, Code 39, QR)
+  const zxingFound = decodeWithZXing(imgData);
+  if (zxingFound) return zxingFound;
+
+  // 3. Try jsQR for specialized 2D QR reading
+  const jsqrFound = decodeWithJsQr(imgData);
+  if (jsqrFound) return jsqrFound;
+
+  return null;
+};
+
+// Multi-pass high-accuracy 1D Barcode & 2D QR code scanner for receipts and photos
+export const scanBarcodeOrQrFromImage = async (imageFileOrBase64: File | string): Promise<string | null> => {
   return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = 'Anonymous';
-    img.onload = () => {
+    img.onload = async () => {
       try {
         const originalWidth = img.width;
         const originalHeight = img.height;
 
-        // Pass 1: Try multiple target scales (1000px, 600px, full scale)
-        const targetScales = [1000, 600, 1400, originalWidth];
+        // Pass 0: Try Native BarcodeDetector directly on full image bitmap
+        const directNative = await decodeWithNativeBarcodeDetector(img);
+        if (directNative) {
+          resolve(directNative);
+          return;
+        }
+
+        // Pass 1: Try multiple target scales (1800px, 1200px, 800px, originalWidth)
+        const targetScales = [1800, 1200, 800, originalWidth];
         for (const targetMax of targetScales) {
           let w = originalWidth;
           let h = originalHeight;
@@ -130,52 +242,59 @@ export const scanQrFromImage = async (imageFileOrBase64: File | string): Promise
           if (!ctx) continue;
 
           ctx.drawImage(img, 0, 0, w, h);
-          const found = tryDecodeImageData(ctx, w, h);
+
+          const found = await decodeAnyBarcodeOrQrFromCanvas(canvas, ctx);
           if (found) {
             resolve(found);
             return;
           }
 
-          // Pass 2: High contrast and binarization filter
+          // Pass 2: High contrast and binarization filter (super effective for printed 1D barcodes and thermal receipts)
           const imgData = ctx.getImageData(0, 0, w, h);
           const data = imgData.data;
           for (let i = 0; i < data.length; i += 4) {
             // Convert to grayscale
             const avg = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
             // High contrast stretch
-            const contrast = (avg - 128) * 1.6 + 128;
+            const contrast = (avg - 128) * 1.8 + 128;
             const finalVal = contrast > 130 ? 255 : 0; // threshold
             data[i] = finalVal;
             data[i + 1] = finalVal;
             data[i + 2] = finalVal;
           }
           ctx.putImageData(imgData, 0, 0);
-          const foundBinarized = tryDecodeImageData(ctx, w, h);
+          const foundBinarized = await decodeAnyBarcodeOrQrFromCanvas(canvas, ctx);
           if (foundBinarized) {
             resolve(foundBinarized);
             return;
           }
 
-          // Pass 3: Center & Bottom crop (receipt QR codes are usually centered or at the bottom)
-          const cropH = Math.round(h * 0.6);
-          const cropY = Math.round(h * 0.4);
-          const cropCanvas = document.createElement('canvas');
-          cropCanvas.width = w;
-          cropCanvas.height = cropH;
-          const cropCtx = cropCanvas.getContext('2d', { willReadFrequently: true });
-          if (cropCtx) {
-            cropCtx.drawImage(img, 0, cropY, w, cropH, 0, 0, w, cropH);
-            const foundCrop = tryDecodeImageData(cropCtx, w, cropH);
-            if (foundCrop) {
-              resolve(foundCrop);
-              return;
+          // Pass 3: Horizontal bands crop (DANFE 1D barcodes are wide horizontal strips in top 40% or center)
+          const horizontalBands = [
+            { y: 0, h: Math.round(h * 0.4) }, // Top band (standard DANFE top header)
+            { y: Math.round(h * 0.25), h: Math.round(h * 0.5) }, // Center band
+            { y: Math.round(h * 0.5), h: Math.round(h * 0.5) } // Bottom band (NFC-e QR codes)
+          ];
+
+          for (const band of horizontalBands) {
+            const cropCanvas = document.createElement('canvas');
+            cropCanvas.width = w;
+            cropCanvas.height = band.h;
+            const cropCtx = cropCanvas.getContext('2d', { willReadFrequently: true });
+            if (cropCtx) {
+              cropCtx.drawImage(img, 0, band.y, w, band.h, 0, 0, w, band.h);
+              const foundCrop = await decodeAnyBarcodeOrQrFromCanvas(cropCanvas, cropCtx);
+              if (foundCrop) {
+                resolve(foundCrop);
+                return;
+              }
             }
           }
         }
 
         resolve(null);
       } catch (err) {
-        console.warn('Erro ao decodificar QR na imagem:', err);
+        console.warn('Erro ao decodificar código de barras/QR na imagem:', err);
         resolve(null);
       }
     };
@@ -190,6 +309,9 @@ export const scanQrFromImage = async (imageFileOrBase64: File | string): Promise
     }
   });
 };
+
+// Backward-compatible alias
+export const scanQrFromImage = scanBarcodeOrQrFromImage;
 
 // Heuristic to detect if a product name is likely packaging vs ingredient
 export const guessCategory = (name: string): 'ingredient' | 'packaging' => {
@@ -328,7 +450,7 @@ export const parseNfceQrCode = (qrCodeString: string): Partial<ParsedReceiptData
                          (rawClean.length === 44 && /^\d+$/.test(rawClean) ? [rawClean, rawClean] : null);
 
   if (accessKeyMatch) {
-    result.accessKey = accessKeyMatch[1] || accessKeyMatch[0];
+    result.accessKey = (accessKeyMatch[1] || accessKeyMatch[0]).replace(/[\s.-]/g, '');
     
     // Parse key parts (UF: 2, AAMM: 4, CNPJ: 14, Mod: 2, Serie: 3, Num: 9, Tipo: 1, Cod: 8, DV: 1)
     if (result.accessKey && result.accessKey.length === 44) {
@@ -339,8 +461,16 @@ export const parseNfceQrCode = (qrCodeString: string): Partial<ParsedReceiptData
       
       const rawCnpj = result.accessKey.substring(6, 20);
       result.cnpj = rawCnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
-      result.series = result.accessKey.substring(22, 25);
+      
+      const model = result.accessKey.substring(20, 22);
+      result.series = result.accessKey.substring(22, 25).replace(/^0+/, '') || '1';
       result.nfcNumber = result.accessKey.substring(25, 34).replace(/^0+/, '');
+
+      if (model === '55') {
+        result.supplier = `Nota Fiscal DANFE NF-e nº ${result.nfcNumber}`;
+      } else {
+        result.supplier = `Cupom Fiscal NFC-e nº ${result.nfcNumber}`;
+      }
     }
   }
 

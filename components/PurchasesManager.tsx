@@ -21,6 +21,7 @@ import {
   parseNfeXml,
   fetchNfceFromUrl,
   fileToBase64,
+  scanBarcodeOrQrFromImage,
   scanQrFromImage,
   compressImageForOcr
 } from '../services/receiptScanner';
@@ -306,8 +307,10 @@ export const PurchasesManager: React.FC<PurchasesManagerProps> = ({
   // Handlers for Receipt Ingestion
   const handleScanQrSuccess = async (decodedText: string) => {
     const rawInput = decodedText.trim();
-    console.log('📱 [PURCHASES] QR Code recebido do leitor / input:', rawInput);
+    console.log('📱 [PURCHASES] Código de Barras / QR Code recebido:', rawInput);
     setIsCameraModalOpen(false);
+
+    const cleanDigits = rawInput.replace(/[\s.-]/g, '');
 
     // Normalize URL if it starts with www or http
     let targetUrl = '';
@@ -318,6 +321,9 @@ export const PurchasesManager: React.FC<PurchasesManagerProps> = ({
     } else if (rawInput.includes('nfce') && rawInput.includes('http')) {
       const match = rawInput.match(/https?:\/\/[^\s]+/i);
       if (match) targetUrl = match[0];
+    } else if (cleanDigits.length === 44 && cleanDigits.startsWith('35') && cleanDigits.substring(20, 22) === '65') {
+      // SP NFC-e model 65 direct query URL
+      targetUrl = `https://www.nfce.fazenda.sp.gov.br/NFCeConsultaPublica/Paginas/ConsultaQRCode.aspx?p=${cleanDigits}|2|1|1|`;
     }
 
     if (targetUrl) {
@@ -333,7 +339,6 @@ export const PurchasesManager: React.FC<PurchasesManagerProps> = ({
         return;
       } catch (err: any) {
         console.error('⚠️ [PURCHASES] Falha na consulta automática da URL da SEFAZ:', err);
-        alert(`Aviso ao consultar SEFAZ: ${err.message || 'Não foi possível buscar os itens online'}. Abrindo formulário para conferência.`);
       } finally {
         setIsLoadingOCR(false);
         setOcrStatusText('');
@@ -342,19 +347,19 @@ export const PurchasesManager: React.FC<PurchasesManagerProps> = ({
 
     // Fallback if not URL or if direct fetch failed
     try {
-      console.log('🔍 [PURCHASES] Processando texto/chave via parser local de metadados...');
+      console.log('🔍 [PURCHASES] Processando texto/chave via parser de código de barras...');
       const parsed = parseNfceQrCode(rawInput);
-      console.log('📋 [PURCHASES] Metadados obtidos:', parsed);
+      console.log('📋 [PURCHASES] Metadados obtidos do código de barras:', parsed);
       setCurrentParsedReceipt({
         ...parsed,
-        supplier: parsed.supplier || 'Supermercado (NFC-e QR Code)',
+        supplier: parsed.supplier || (cleanDigits.length === 44 ? `Nota Fiscal DANFE NF-e` : 'Nota Fiscal / Cupom'),
         date: parsed.date || new Date().toISOString().substring(0, 10),
         items: parsed.items || []
       });
       setIsReviewModalOpen(true);
     } catch (err) {
-      console.error('❌ [PURCHASES] Erro no parser de QR Code:', err);
-      alert('QR Code lido, mas não foi possível extrair dados automaticamente. Você pode preencher os itens manualmente.');
+      console.error('❌ [PURCHASES] Erro no parser de código de barras:', err);
+      alert('Código lido com sucesso! Você pode preencher ou conferir os itens na tela a seguir.');
     }
   };
 
@@ -384,23 +389,48 @@ export const PurchasesManager: React.FC<PurchasesManagerProps> = ({
     setOcrStatusText(`Analisando imagem: ${file.name}...`);
 
     try {
-      console.log('🖼️ [PURCHASES] Verificando se há QR Code na imagem enviada...');
-      const qrData = await scanQrFromImage(file);
-      if (qrData) {
-        console.log('✅ [PURCHASES] QR Code identificado na foto:', qrData);
-        await handleScanQrSuccess(qrData);
-        return;
+      console.log('🖼️ [PURCHASES] Verificando se há Código de Barras ou QR Code na imagem enviada...');
+      const detectedCode = await scanBarcodeOrQrFromImage(file);
+      
+      const compressed = await compressImageForOcr(file, 1600, 0.82);
+      
+      if (detectedCode) {
+        console.log('✅ [PURCHASES] Código de Barras / QR Code identificado na foto:', detectedCode);
+        const codeMetadata = parseNfceQrCode(detectedCode);
+
+        // Also run Gemini OCR on the photo to get the full item breakdown
+        setOcrStatusText('Código identificado! Extraindo lista completa de itens com Inteligência Artificial...');
+        try {
+          const aiParsed = await parseReceiptImageWithGemini(compressed, 'image/jpeg');
+          
+          // Merge accurate barcode metadata with extracted AI items
+          setCurrentParsedReceipt({
+            ...aiParsed,
+            supplier: aiParsed.supplier || codeMetadata.supplier || 'Nota Fiscal DANFE',
+            cnpj: codeMetadata.cnpj || aiParsed.cnpj,
+            accessKey: codeMetadata.accessKey || aiParsed.accessKey,
+            nfcNumber: codeMetadata.nfcNumber || aiParsed.nfcNumber,
+            series: codeMetadata.series || aiParsed.series,
+            date: aiParsed.date || codeMetadata.date || new Date().toISOString().substring(0, 10),
+            totalAmount: aiParsed.totalAmount > 0 ? aiParsed.totalAmount : (codeMetadata.totalAmount || 0)
+          });
+          setIsReviewModalOpen(true);
+          return;
+        } catch (aiErr) {
+          console.warn('⚠️ [PURCHASES] IA encontrou dificuldade, usando metadados do código de barras:', aiErr);
+          await handleScanQrSuccess(detectedCode);
+          return;
+        }
       }
 
-      console.log('🤖 [PURCHASES] Nenhum QR Code detectado na foto. Acionando IA para extrair itens do cupom...');
+      console.log('🤖 [PURCHASES] Nenhum código de barras direto detectado na foto. Acionando IA para extrair itens...');
       setOcrStatusText('Extraindo itens e preços com Inteligência Artificial...');
-      const compressed = await compressImageForOcr(file, 1600, 0.82);
       const parsed = await parseReceiptImageWithGemini(compressed, 'image/jpeg');
       setCurrentParsedReceipt(parsed);
       setIsReviewModalOpen(true);
     } catch (err: any) {
       console.error('Erro ao processar arquivo:', err);
-      alert(`Erro na leitura do cupom: ${err.message || 'Verifique o formato da imagem.'}`);
+      alert(`Erro na leitura da nota: ${err.message || 'Verifique o formato da imagem.'}`);
     } finally {
       setIsLoadingOCR(false);
       setOcrStatusText('');
