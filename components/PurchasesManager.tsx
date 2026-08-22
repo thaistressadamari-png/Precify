@@ -19,7 +19,10 @@ import {
   parseReceiptImageWithGemini,
   parseNfceQrCode,
   parseNfeXml,
-  fileToBase64
+  fetchNfceFromUrl,
+  fileToBase64,
+  scanQrFromImage,
+  compressImageForOcr
 } from '../services/receiptScanner';
 
 interface PurchasesManagerProps {
@@ -168,20 +171,57 @@ export const PurchasesManager: React.FC<PurchasesManagerProps> = ({
   }, [receipts, searchTerm, selectedMonth, selectedSupplier]);
 
   // Handlers for Receipt Ingestion
-  const handleScanQrSuccess = (decodedText: string) => {
+  const handleScanQrSuccess = async (decodedText: string) => {
+    const rawInput = decodedText.trim();
+    console.log('📱 [PURCHASES] QR Code recebido do leitor / input:', rawInput);
     setIsCameraModalOpen(false);
+
+    // Normalize URL if it starts with www or http
+    let targetUrl = '';
+    if (rawInput.startsWith('http://') || rawInput.startsWith('https://')) {
+      targetUrl = rawInput;
+    } else if (rawInput.startsWith('www.')) {
+      targetUrl = `https://${rawInput}`;
+    } else if (rawInput.includes('nfce') && rawInput.includes('http')) {
+      const match = rawInput.match(/https?:\/\/[^\s]+/i);
+      if (match) targetUrl = match[0];
+    }
+
+    if (targetUrl) {
+      console.log('🌐 [PURCHASES] URL de consulta identificada:', targetUrl);
+      setIsLoadingOCR(true);
+      setOcrStatusText('Consultando cupom fiscal diretamente na SEFAZ...');
+
+      try {
+        const parsed = await fetchNfceFromUrl(targetUrl);
+        console.log('🎉 [PURCHASES] Itens extraídos com sucesso da SEFAZ:', parsed);
+        setCurrentParsedReceipt(parsed);
+        setIsReviewModalOpen(true);
+        return;
+      } catch (err: any) {
+        console.error('⚠️ [PURCHASES] Falha na consulta automática da URL da SEFAZ:', err);
+        alert(`Aviso ao consultar SEFAZ: ${err.message || 'Não foi possível buscar os itens online'}. Abrindo formulário para conferência.`);
+      } finally {
+        setIsLoadingOCR(false);
+        setOcrStatusText('');
+      }
+    }
+
+    // Fallback if not URL or if direct fetch failed
     try {
-      const parsed = parseNfceQrCode(decodedText);
+      console.log('🔍 [PURCHASES] Processando texto/chave via parser local de metadados...');
+      const parsed = parseNfceQrCode(rawInput);
+      console.log('📋 [PURCHASES] Metadados obtidos:', parsed);
       setCurrentParsedReceipt({
         ...parsed,
         supplier: parsed.supplier || 'Supermercado (NFC-e QR Code)',
         date: parsed.date || new Date().toISOString().substring(0, 10),
-        items: []
+        items: parsed.items || []
       });
       setIsReviewModalOpen(true);
     } catch (err) {
-      console.error(err);
-      alert('QR Code lido, mas não foi possível extrair dados automaticamente. Você pode preencher os itens.');
+      console.error('❌ [PURCHASES] Erro no parser de QR Code:', err);
+      alert('QR Code lido, mas não foi possível extrair dados automaticamente. Você pode preencher os itens manualmente.');
     }
   };
 
@@ -208,12 +248,21 @@ export const PurchasesManager: React.FC<PurchasesManagerProps> = ({
     if (!file) return;
 
     setIsLoadingOCR(true);
-    setOcrStatusText(`Lendo documento fiscal: ${file.name}...`);
+    setOcrStatusText(`Analisando imagem: ${file.name}...`);
 
     try {
-      const base64 = await fileToBase64(file);
-      const mimeType = file.type || 'image/jpeg';
-      const parsed = await parseReceiptImageWithGemini(base64, mimeType);
+      console.log('🖼️ [PURCHASES] Verificando se há QR Code na imagem enviada...');
+      const qrData = await scanQrFromImage(file);
+      if (qrData) {
+        console.log('✅ [PURCHASES] QR Code identificado na foto:', qrData);
+        await handleScanQrSuccess(qrData);
+        return;
+      }
+
+      console.log('🤖 [PURCHASES] Nenhum QR Code detectado na foto. Acionando IA para extrair itens do cupom...');
+      setOcrStatusText('Extraindo itens e preços com Inteligência Artificial...');
+      const compressed = await compressImageForOcr(file, 1600, 0.82);
+      const parsed = await parseReceiptImageWithGemini(compressed, 'image/jpeg');
       setCurrentParsedReceipt(parsed);
       setIsReviewModalOpen(true);
     } catch (err: any) {
@@ -460,71 +509,73 @@ export const PurchasesManager: React.FC<PurchasesManagerProps> = ({
       </div>
 
       {/* Analytics Row: Monthly Evolution Chart + Top Suppliers */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 min-w-0 max-w-full">
         {/* Monthly Purchases Evolution Chart */}
-        <div className="lg:col-span-2 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-3xl shadow-lg border border-rose-100 dark:border-gray-700 flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-display text-xl font-bold text-brand-text dark:text-rose-100 flex items-center gap-2">
-                <ChartBarIcon className="w-5 h-5 text-brand-primary" />
-                Evolução Mensal de Compras (Últimos 6 Meses)
+        <div className="lg:col-span-2 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-4 sm:p-6 rounded-3xl shadow-lg border border-rose-100 dark:border-gray-700 flex flex-col justify-between min-w-0 max-w-full overflow-hidden">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+              <h2 className="font-display text-lg sm:text-xl font-bold text-brand-text dark:text-rose-100 flex items-center gap-2">
+                <ChartBarIcon className="w-5 h-5 text-brand-primary flex-shrink-0" />
+                <span className="truncate">Evolução Mensal (6 Meses)</span>
               </h2>
               <span className="text-xs text-brand-light-text dark:text-gray-400">Valores em R$</span>
             </div>
 
             {/* Custom Tailwind Bar Chart */}
-            <div className="h-48 flex items-end justify-between gap-3 pt-6 pb-2 px-2 border-b border-rose-100 dark:border-gray-700">
-              {last6Months.map((m) => {
-                const heightPercent = maxMonthValue > 0 ? (m.total / maxMonthValue) * 100 : 0;
-                const isCurrent = m.key === currentMonthKey;
+            <div className="w-full overflow-x-auto no-scrollbar pb-1">
+              <div className="h-44 sm:h-48 min-w-[280px] w-full flex items-end justify-between gap-2 sm:gap-3 pt-4 pb-2 px-1 border-b border-rose-100 dark:border-gray-700">
+                {last6Months.map((m) => {
+                  const heightPercent = maxMonthValue > 0 ? (m.total / maxMonthValue) * 100 : 0;
+                  const isCurrent = m.key === currentMonthKey;
 
-                return (
-                  <div key={m.key} className="flex-1 flex flex-col items-center gap-2 group h-full justify-end">
-                    {/* Tooltip on hover */}
-                    <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-gray-900 text-white text-[10px] py-1 px-2 rounded-lg font-bold whitespace-nowrap shadow-lg pointer-events-none mb-1">
-                      {formatCurrency(m.total)} ({m.itemsCount} itens)
-                    </div>
+                  return (
+                    <div key={m.key} className="flex-1 min-w-0 flex flex-col items-center gap-1.5 group h-full justify-end">
+                      {/* Tooltip on hover */}
+                      <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-gray-900 text-white text-[10px] py-0.5 px-1.5 rounded font-bold whitespace-nowrap shadow-lg pointer-events-none mb-1">
+                        {formatCurrency(m.total)}
+                      </div>
 
-                    {/* Bar */}
-                    <div className="w-full max-w-[48px] bg-rose-100 dark:bg-gray-700 rounded-t-xl overflow-hidden h-full flex items-end">
-                      <div
-                        style={{ height: `${Math.max(heightPercent, 4)}%` }}
-                        className={`w-full rounded-t-xl transition-all duration-500 ${
-                          isCurrent
-                            ? 'bg-gradient-to-t from-brand-primary to-rose-400 shadow-md'
-                            : 'bg-rose-300 dark:bg-rose-900/60 hover:bg-brand-primary/80'
+                      {/* Bar */}
+                      <div className="w-full max-w-[42px] bg-rose-100 dark:bg-gray-700 rounded-t-lg overflow-hidden h-full flex items-end">
+                        <div
+                          style={{ height: `${Math.max(heightPercent, 4)}%` }}
+                          className={`w-full rounded-t-lg transition-all duration-500 ${
+                            isCurrent
+                              ? 'bg-gradient-to-t from-brand-primary to-rose-400 shadow-sm'
+                              : 'bg-rose-300 dark:bg-rose-900/60 hover:bg-brand-primary/80'
+                          }`}
+                        />
+                      </div>
+
+                      {/* X-axis label */}
+                      <span
+                        className={`text-[10px] sm:text-[11px] font-semibold uppercase truncate text-center w-full ${
+                          isCurrent ? 'text-brand-primary font-bold' : 'text-gray-400'
                         }`}
-                      />
+                      >
+                        {m.label}
+                      </span>
                     </div>
-
-                    {/* X-axis label */}
-                    <span
-                      className={`text-[11px] font-semibold uppercase ${
-                        isCurrent ? 'text-brand-primary font-bold' : 'text-gray-400'
-                      }`}
-                    >
-                      {m.label}
-                    </span>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           </div>
 
-          <div className="mt-4 flex items-center justify-between text-xs text-brand-light-text dark:text-gray-400">
-            <span>💡 O gráfico é atualizado a cada cupom importado</span>
-            <span className="font-semibold text-brand-text dark:text-gray-300">
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-brand-light-text dark:text-gray-400">
+            <span className="text-[11px]">💡 Atualizado a cada cupom importado</span>
+            <span className="font-semibold text-brand-text dark:text-gray-300 text-[11px]">
               Média mensal: {formatCurrency(totalAllTime / Math.max(last6Months.filter(m => m.total > 0).length, 1))}
             </span>
           </div>
         </div>
 
         {/* Top Suppliers Breakdown */}
-        <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-3xl shadow-lg border border-rose-100 dark:border-gray-700 flex flex-col justify-between">
-          <div>
-            <h2 className="font-display text-xl font-bold text-brand-text dark:text-rose-100 mb-4 flex items-center gap-2">
-              <ShoppingBagIcon className="w-5 h-5 text-brand-primary" />
-              Principais Fornecedores
+        <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-4 sm:p-6 rounded-3xl shadow-lg border border-rose-100 dark:border-gray-700 flex flex-col justify-between min-w-0 max-w-full overflow-hidden">
+          <div className="min-w-0">
+            <h2 className="font-display text-lg sm:text-xl font-bold text-brand-text dark:text-rose-100 mb-4 flex items-center gap-2">
+              <ShoppingBagIcon className="w-5 h-5 text-brand-primary flex-shrink-0" />
+              <span className="truncate">Principais Fornecedores</span>
             </h2>
 
             {topSuppliers.length === 0 ? (
@@ -776,6 +827,11 @@ export const PurchasesManager: React.FC<PurchasesManagerProps> = ({
         onClose={() => setIsCameraModalOpen(false)}
         onScanSuccess={handleScanQrSuccess}
         onCapturePhoto={handleCapturePhotoFromCamera}
+        onParsedReceipt={(parsed) => {
+          setIsCameraModalOpen(false);
+          setCurrentParsedReceipt(parsed);
+          setIsReviewModalOpen(true);
+        }}
       />
 
       {/* Review & Link Products Modal */}

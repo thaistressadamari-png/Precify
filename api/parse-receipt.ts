@@ -47,8 +47,8 @@ export default async function handler(req: Request, res: Response) {
 
     const ai = getGeminiClient();
 
-    const prompt = `Você é um assistente especializado em digitalização e extração ultrarrápida de Cupons Fiscais (NFC-e, NF-e, SAT, CF-e, recibos) de supermercados, atacados e lojas do Brasil (ex: Alpha Centro Comercio, Cavicchiolli, Atacadão, Assaí, Carrefour, Pão de Açúcar, Dia, Shibata, etc.).
-Analise a imagem da nota fiscal/cupom fiscal fornecida com extrema precisão e extraia todos os itens e metadados.
+    const prompt = `Você é um assistente especializado em digitalização e extração ultrarrápida de Cupons Fiscais (NFC-e, NF-e, SAT, CF-e, recibos, fotos de comprovantes e capturas de tela/prints de consulta pública da SEFAZ) do Brasil.
+Analise o documento fiscal/screenshot/imagem fornecida com extrema precisão e extraia todos os itens e metadados.
 
 Regras de Extração:
 1. Extraia o nome do estabelecimento/supermercado/loja (supplier).
@@ -56,17 +56,17 @@ Regras de Extração:
 3. Extraia a data da compra no formato "YYYY-MM-DD" (apenas ano-mês-dia).
 4. Extraia a Chave de Acesso (CHAVE DE ACESSO com 44 dígitos numéricos, mesmo que esteja impressa com espaços em blocos de 4 dígitos como "3526 0807 2203..."). Retorne apenas os 44 dígitos numéricos sem espaços.
 5. Extraia o Número do cupom (NFC-e ou Controle) e Série se houver.
-6. Extraia o Valor Total pago (totalAmount em número float, ex: 4.95 ou 24.04).
+6. Extraia o Valor Total pago (totalAmount em número float, ex: 18.86 ou 4.95).
 7. Extraia a Forma de Pagamento (ex: "Cartão de Crédito", "Cartão de Débito", "Dinheiro", "Pix").
 8. Extraia cada item da compra:
-   - rawName: descrição exata do item (ex: "CRISTAL LIQUIDO BISNAGA 40G", "BANANA NANICA KG", "NATA FRIMESA 300G", "LEITE CONDENSADO MOÇA 395G").
-   - code: código do produto ou código de barras se houver.
+   - rawName: descrição exata do item (ex: "CAIXA 1 CUPCAKE C TAMPA 1UND C5038 IDEIA", "FITA CETIM NAJAR COR 25 10MX22MM", "SACOLA KRAFT P CROMUS", "LEITE CONDENSADO MOÇA 395G").
+   - code: código do produto, código de barras ou EAN se houver (ex: 7908015136574).
    - quantity: quantidade comprada em número float (ex: 1, 2, ou 0.895 para peso).
-   - unit: unidade impressa na nota (ex: "Kg", "Un", "g", "L", "Cx", "Pct").
-   - unitPrice: valor unitário impresso (ex: 4.95 ou 16.99).
-   - totalPrice: valor total do item (ex: 4.95 ou 16.99).
-   - category: 'ingredient' (se for alimento, fruta, laticínio, farinha, açúcar, fermento, chocolate, etc.) ou 'packaging' (se for embalagem, caixa, forma, fita, copo, saco, prato, etc.).
-   - suggestedPackageAmount: tamanho da embalagem ou quantidade líquida em número (ex: para 40G coloque 40; para 300G coloque 300; para 395G coloque 395; para 1KG coloque 1000; para 1 Un coloque 1).
+   - unit: unidade impressa na nota (ex: "UN", "Kg", "g", "L", "Cx", "Pct").
+   - unitPrice: valor unitário impresso (ex: 2.15 ou 7.29).
+   - totalPrice: valor total do item (ex: 2.15 ou 4.78).
+   - category: 'ingredient' (se for alimento, fruta, laticínio, farinha, açúcar, fermento, chocolate, etc.) ou 'packaging' (se for embalagem, caixa, fita de cetim, sacola kraft, forma, fita, copo, saco, prato, etc.).
+   - suggestedPackageAmount: tamanho da embalagem ou quantidade líquida em número (ex: para 40G coloque 40; para 10MX22MM coloque 10; para 1UND coloque 1; para 395G coloque 395; para 1KG coloque 1000).
    - suggestedUnit: uma das unidades: 'g', 'kg', 'ml', 'l', 'un', 'pacote', 'rolo', 'm'.
 
 Retorne ESTRITAMENTE o JSON de acordo com o esquema solicitado.`;

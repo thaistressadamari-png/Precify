@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import type { Ingredient, Packaging, InvoiceReceipt, InvoicePurchaseItem, Unit, PackagingUnit } from '../types';
 import { XMarkIcon } from './icons/XMarkIcon';
 import { CheckCircleIcon } from './icons/CheckCircleIcon';
 import { PlusIcon } from './icons/PlusIcon';
 import { TrashIcon } from './icons/TrashIcon';
-import { LinkIcon, SparklesIcon } from './icons/LinkIcon';
+import { LinkIcon } from './icons/LinkIcon';
+import { SearchIcon } from './icons/SearchIcon';
 import { formatCurrency, safeParseFloat } from './utils';
 import { findBestMatch } from '../services/receiptScanner';
 
@@ -36,6 +38,17 @@ export const ReviewReceiptModal: React.FC<ReviewReceiptModalProps> = ({
   const [accessKey, setAccessKey] = useState<string>(initialReceipt.accessKey || '');
   const [cnpj, setCnpj] = useState<string>(initialReceipt.cnpj || '');
   const [notes, setNotes] = useState<string>(initialReceipt.notes || '');
+
+  // Lock body scroll when modal is active
+  useEffect(() => {
+    if (isOpen) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [isOpen]);
 
   // Initialize review items
   const [items, setItems] = useState<InvoicePurchaseItem[]>(() => {
@@ -71,6 +84,9 @@ export const ReviewReceiptModal: React.FC<ReviewReceiptModalProps> = ({
   });
 
   if (!isOpen) return null;
+
+  // Filter state for searching existing items per item card
+  const [searchFilter, setSearchFilter] = useState<{ [itemId: string]: string }>({});
 
   const handleItemChange = (id: string, updates: Partial<InvoicePurchaseItem>) => {
     setItems((prev) =>
@@ -154,36 +170,6 @@ export const ReviewReceiptModal: React.FC<ReviewReceiptModalProps> = ({
       packagePrice: 0
     };
     setItems((prev) => [...prev, newItem]);
-  };
-
-  const handleAutoLinkAll = () => {
-    setItems((prev) =>
-      prev.map((item) => {
-        if (item.category === 'ignore') return item;
-        const match = findBestMatch(
-          item.rawName,
-          item.category === 'packaging' ? 'packaging' : 'ingredient',
-          existingIngredients,
-          existingPackaging
-        );
-        if (match) {
-          const targetObj =
-            item.category === 'ingredient'
-              ? existingIngredients.find((i) => i.id === match.id)
-              : existingPackaging.find((p) => p.id === match.id);
-
-          return {
-            ...item,
-            linkType: 'existing',
-            existingTargetId: match.id,
-            targetName: match.name,
-            targetUnit: (targetObj as any)?.unit || item.targetUnit,
-            packageAmount: (targetObj as any)?.packageAmount || (targetObj as any)?.amount || item.packageAmount
-          };
-        }
-        return item;
-      })
-    );
   };
 
   const calculateTotalReceipt = items
@@ -311,194 +297,221 @@ export const ReviewReceiptModal: React.FC<ReviewReceiptModalProps> = ({
     onConfirm(finalReceipt, newIngredients, updatedIngredients, newPackaging, updatedPackaging);
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto animate-fade-in">
-      <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl border border-rose-100 dark:border-gray-700 w-full max-w-5xl my-6 max-h-[92vh] flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="p-4 sm:p-6 border-b border-rose-100 dark:border-gray-700 flex justify-between items-center bg-rose-50/60 dark:bg-gray-800/60">
-          <div>
+  return createPortal(
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/90 backdrop-blur-md p-0 sm:p-4 overflow-hidden animate-fade-in">
+      <div className="bg-[#FAF3F5] dark:bg-gray-900 rounded-none sm:rounded-2xl shadow-2xl border-0 sm:border border-rose-200/80 dark:border-gray-700 w-full h-full sm:h-[95vh] sm:max-h-[920px] sm:max-w-4xl flex flex-col overflow-hidden">
+        
+        {/* =========================================================================
+            HEADER (Compatível com Dynamic Island / iPhone Safe Area)
+           ========================================================================= */}
+        <div 
+          style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 0.625rem)' }}
+          className="bg-white dark:bg-gray-800 border-b border-rose-100 dark:border-gray-700 px-3.5 pb-2.5 sm:py-3 sm:px-4 flex items-center justify-between gap-2 flex-shrink-0 shadow-xs"
+        >
+          <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <span className="px-2.5 py-0.5 text-xs font-bold uppercase rounded-full bg-brand-primary/10 text-brand-primary dark:bg-rose-900/40 dark:text-rose-300">
-                Conferência de Cupom Fiscal
+              <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase rounded bg-brand-primary text-white tracking-wider shadow-2xs">
+                Conferência Fiscal
               </span>
-              {accessKey && (
-                <span className="text-xs text-brand-light-text dark:text-gray-400 font-mono hidden sm:inline">
-                  Chave: {accessKey.substring(0, 10)}...{accessKey.substring(34)}
-                </span>
-              )}
+              <h2 className="font-display text-xs sm:text-sm font-bold text-brand-text dark:text-rose-100 truncate">
+                Revisar Itens do Cupom
+              </h2>
             </div>
-            <h2 className="font-display text-2xl font-bold text-brand-text dark:text-rose-100 mt-1">
-              Revisar Itens & Vincular aos Cadastros
-            </h2>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-full hover:bg-rose-100 dark:hover:bg-gray-700 transition"
-          >
-            <XMarkIcon className="w-6 h-6" />
-          </button>
-        </div>
-
-        {/* Receipt General Metadata Inputs */}
-        <div className="p-4 sm:p-6 bg-white dark:bg-gray-800 border-b border-rose-100 dark:border-gray-700 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-          <div>
-            <label className="block text-xs font-semibold text-brand-light-text dark:text-gray-400 mb-1">
-              Fornecedor / Supermercado
-            </label>
-            <input
-              type="text"
-              value={supplier}
-              onChange={(e) => setSupplier(e.target.value)}
-              className="w-full px-3 py-2 bg-rose-50/50 dark:bg-gray-700 border border-rose-200 dark:border-gray-600 rounded-xl text-sm font-medium focus:ring-2 focus:ring-brand-primary outline-none"
-              placeholder="Ex: Supermercados Cavicchiolli"
-            />
+            {accessKey ? (
+              <p className="text-[10px] text-brand-light-text dark:text-gray-400 font-mono truncate mt-0.5">
+                NFC-e: {accessKey}
+              </p>
+            ) : (
+              <p className="text-[10px] text-gray-400 dark:text-gray-500 italic mt-0.5">
+                Cupom sem chave digital
+              </p>
+            )}
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-brand-light-text dark:text-gray-400 mb-1">
-              Data da Compra
-            </label>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="w-full px-3 py-2 bg-rose-50/50 dark:bg-gray-700 border border-rose-200 dark:border-gray-600 rounded-xl text-sm font-medium focus:ring-2 focus:ring-brand-primary outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-brand-light-text dark:text-gray-400 mb-1">
-              CNPJ (Opcional)
-            </label>
-            <input
-              type="text"
-              value={cnpj}
-              onChange={(e) => setCnpj(e.target.value)}
-              className="w-full px-3 py-2 bg-rose-50/50 dark:bg-gray-700 border border-rose-200 dark:border-gray-600 rounded-xl text-sm font-medium focus:ring-2 focus:ring-brand-primary outline-none"
-              placeholder="43.259.548/0027-00"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-brand-light-text dark:text-gray-400 mb-1">
-              Valor Total do Cupom
-            </label>
-            <div className="w-full px-3 py-2 bg-brand-primary/5 dark:bg-brand-primary/10 border border-brand-primary/30 rounded-xl text-base font-bold text-brand-primary">
-              {formatCurrency(calculateTotalReceipt)}
-            </div>
-          </div>
-        </div>
-
-        {/* Action bar above table */}
-        <div className="px-4 sm:px-6 py-3 bg-rose-50/30 dark:bg-gray-900/30 flex flex-wrap items-center justify-between gap-3 border-b border-rose-100 dark:border-gray-700">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-brand-text dark:text-gray-200">
-              Itens Identificados ({items.length})
-            </span>
-            <button
-              type="button"
-              onClick={handleAutoLinkAll}
-              className="py-1 px-3 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 rounded-lg text-xs font-bold transition flex items-center gap-1.5 border border-amber-300 dark:border-amber-700"
-              title="Detecta automaticamente se algum item possui nome similar a um ingrediente ou embalagem cadastrado"
-            >
-              <SparklesIcon className="w-4 h-4" />
-              Auto-Vincular por Nome
-            </button>
-          </div>
           <button
             type="button"
-            onClick={handleAddNewManualItem}
-            className="py-1 px-3 bg-white dark:bg-gray-700 border border-rose-200 dark:border-gray-600 hover:bg-rose-50 dark:hover:bg-gray-600 text-brand-text dark:text-gray-200 rounded-lg text-xs font-semibold transition flex items-center gap-1"
+            onClick={onClose}
+            className="p-1.5 text-brand-light-text hover:text-brand-text dark:hover:text-rose-100 rounded-lg hover:bg-rose-50 dark:hover:bg-gray-700 transition flex-shrink-0"
+            title="Fechar"
           >
-            <PlusIcon className="w-4 h-4" />
-            Adicionar Item Manual
+            <XMarkIcon className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Items List (Scrollable Area) */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+        {/* =========================================================================
+            SCROLLABLE CONTENT (Metadados + Cards dos Itens + Botão Adicionar Item)
+           ========================================================================= */}
+        <div className="flex-1 min-h-0 overflow-y-auto p-2.5 sm:p-3.5 space-y-3 bg-rose-50/50 dark:bg-gray-900/90">
+          
+          {/* Top Metadata Fields (Fornecedor, Data, CNPJ, Total) */}
+          <div className="bg-white dark:bg-gray-800 border border-rose-100 dark:border-gray-700 rounded-xl p-2.5 grid grid-cols-2 sm:grid-cols-4 gap-2 shadow-xs">
+            {/* Fornecedor */}
+            <div className="bg-rose-50/40 dark:bg-gray-750 border border-rose-100/80 dark:border-gray-600 rounded-lg px-2 py-1 flex flex-col justify-center">
+              <span className="block text-[9px] uppercase font-bold text-brand-light-text dark:text-gray-400 leading-tight">
+                Fornecedor
+              </span>
+              <input
+                type="text"
+                value={supplier}
+                onChange={(e) => setSupplier(e.target.value)}
+                className="bg-transparent text-xs font-semibold text-brand-text dark:text-gray-100 outline-none w-full truncate h-5 placeholder:text-gray-400"
+                placeholder="Supermercado / Loja..."
+              />
+            </div>
+
+            {/* Data da Compra */}
+            <div className="bg-rose-50/40 dark:bg-gray-750 border border-rose-100/80 dark:border-gray-600 rounded-lg px-2 py-1 flex flex-col justify-center">
+              <span className="block text-[9px] uppercase font-bold text-brand-light-text dark:text-gray-400 leading-tight">
+                Data Compra
+              </span>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="bg-transparent text-xs font-semibold text-brand-text dark:text-gray-100 outline-none w-full h-5"
+              />
+            </div>
+
+            {/* CNPJ */}
+            <div className="bg-rose-50/40 dark:bg-gray-750 border border-rose-100/80 dark:border-gray-600 rounded-lg px-2 py-1 flex flex-col justify-center">
+              <span className="block text-[9px] uppercase font-bold text-brand-light-text dark:text-gray-400 leading-tight">
+                CNPJ (Opcional)
+              </span>
+              <input
+                type="text"
+                value={cnpj}
+                onChange={(e) => setCnpj(e.target.value)}
+                className="bg-transparent text-xs font-mono font-medium text-brand-text dark:text-gray-100 outline-none w-full truncate h-5 placeholder:text-gray-400"
+                placeholder="00.000.000/0000-00"
+              />
+            </div>
+
+            {/* Total do Cupom */}
+            <div className="bg-rose-100/60 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 rounded-lg px-2 py-1 flex flex-col justify-center">
+              <span className="block text-[9px] uppercase font-bold text-brand-primary dark:text-rose-300 leading-tight">
+                Total do Cupom
+              </span>
+              <span className="text-xs sm:text-sm font-bold text-brand-primary dark:text-rose-300 truncate h-5 flex items-center">
+                {formatCurrency(calculateTotalReceipt)}
+              </span>
+            </div>
+          </div>
+
+          {/* Empty state if no items */}
+          {items.length === 0 && (
+            <div className="text-center py-8 px-4 bg-white dark:bg-gray-800 border-2 border-dashed border-rose-200 dark:border-gray-700 rounded-xl my-2">
+              <p className="text-xs font-semibold text-brand-text dark:text-gray-300 mb-2">
+                Nenhum produto listado neste cupom.
+              </p>
+              <button
+                type="button"
+                onClick={handleAddNewManualItem}
+                className="py-1.5 px-3 bg-brand-primary hover:bg-rose-600 text-white text-xs font-bold rounded-lg shadow-sm transition"
+              >
+                + Adicionar Primeiro Item
+              </button>
+            </div>
+          )}
+
+          {/* Product Cards com Alto Contraste, Cores do Sistema e Linha Fiscal Detalhada */}
           {items.map((item, idx) => {
             const isIgnore = item.category === 'ignore';
             const isPackaging = item.category === 'packaging';
             const isIngredient = item.category === 'ingredient';
+            const searchVal = (searchFilter[item.id] || '').toLowerCase().trim();
+
+            const filteredIngredients = existingIngredients.filter((ing) =>
+              !searchVal || ing.name.toLowerCase().includes(searchVal)
+            );
+            const filteredPackaging = existingPackaging.filter((pkg) =>
+              !searchVal || pkg.name.toLowerCase().includes(searchVal)
+            );
 
             return (
               <div
                 key={item.id}
-                className={`p-4 rounded-2xl border transition-all ${
+                className={`rounded-xl border shadow-xs transition-all overflow-hidden ${
                   isIgnore
-                    ? 'bg-gray-100/70 dark:bg-gray-900/40 border-gray-200 dark:border-gray-800 opacity-60'
+                    ? 'bg-gray-50/70 dark:bg-gray-900/60 border-gray-200 dark:border-gray-800 opacity-60'
                     : item.linkType === 'existing'
-                    ? 'bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800/60 shadow-sm'
-                    : 'bg-white dark:bg-gray-800/90 border-rose-100 dark:border-gray-700 shadow-sm'
+                    ? 'bg-white dark:bg-gray-800 border-blue-200 dark:border-blue-800 ring-1 ring-blue-200/60'
+                    : 'bg-white dark:bg-gray-800 border-rose-100 dark:border-gray-700'
                 }`}
               >
-                {/* Item Top Row */}
-                <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-rose-100/60 dark:border-gray-700/60">
-                  <div className="flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-full bg-rose-100 dark:bg-gray-700 text-brand-primary dark:text-rose-200 text-xs font-bold flex items-center justify-center">
+                {/* Linha 1: Número, Nome Completo do Item no Cupom e Lixeira */}
+                <div className="bg-rose-50/70 dark:bg-gray-750/80 px-3 py-2 border-b border-rose-100 dark:border-gray-700 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <span className="w-5 h-5 rounded-full bg-brand-primary text-white text-[10px] font-bold flex items-center justify-center flex-shrink-0 shadow-2xs">
                       {idx + 1}
                     </span>
-                    <span className="font-mono text-xs sm:text-sm font-semibold text-brand-text dark:text-rose-100">
-                      {item.rawName}
+                    <span className="font-bold text-xs sm:text-sm text-brand-text dark:text-white truncate" title={item.rawName}>
+                      {item.rawName || 'Item sem nome'}
                     </span>
                     {item.code && (
-                      <span className="text-[10px] text-gray-400 font-mono bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">
-                        Cód: {item.code}
+                      <span className="text-[9px] text-brand-light-text dark:text-gray-400 font-mono bg-rose-100/60 dark:bg-gray-700 px-1.5 py-0.5 rounded hidden sm:inline flex-shrink-0">
+                        #{item.code}
                       </span>
                     )}
                   </div>
 
-                  <div className="flex items-center gap-3">
-                    <div className="text-right">
-                      <span className="text-xs text-brand-light-text dark:text-gray-400 mr-2">
-                        {item.quantity} {item.unit} x {formatCurrency(item.unitPrice)} =
-                      </span>
-                      <span className="font-bold text-brand-text dark:text-white">
-                        {formatCurrency(item.totalPrice)}
-                      </span>
-                    </div>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveItem(item.id)}
+                    className="p-1 text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-md transition flex-shrink-0"
+                    title="Excluir item deste cupom"
+                  >
+                    <TrashIcon className="w-4 h-4" />
+                  </button>
+                </div>
 
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveItem(item.id)}
-                      className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 transition"
-                      title="Excluir item deste cupom"
-                    >
-                      <TrashIcon className="w-4 h-4" />
-                    </button>
+                {/* Linha 2: Especificações Fiscais do Cupom (Qtde, UN, Vl. Unitário, Vl. Total) */}
+                <div className="px-3 py-1.5 bg-rose-50/30 dark:bg-gray-800/80 border-b border-rose-100/70 dark:border-gray-700/70 flex flex-wrap items-center justify-between gap-1.5 sm:gap-2 text-xs">
+                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2.5 text-brand-light-text dark:text-gray-300">
+                    <span className="inline-flex items-center gap-1 bg-white dark:bg-gray-700 px-2 py-0.5 rounded-md border border-rose-100 dark:border-gray-600 font-medium text-[11px] shadow-2xs">
+                      <span className="text-brand-light-text dark:text-gray-400 text-[10px]">Qtde:</span>
+                      <strong className="text-brand-text dark:text-white font-bold">{item.quantity}</strong>
+                    </span>
+                    <span className="inline-flex items-center gap-1 bg-white dark:bg-gray-700 px-2 py-0.5 rounded-md border border-rose-100 dark:border-gray-600 font-medium text-[11px] shadow-2xs">
+                      <span className="text-brand-light-text dark:text-gray-400 text-[10px]">UN:</span>
+                      <strong className="text-brand-text dark:text-white font-bold">{item.unit || 'UN'}</strong>
+                    </span>
+                    <span className="inline-flex items-center gap-1 bg-white dark:bg-gray-700 px-2 py-0.5 rounded-md border border-rose-100 dark:border-gray-600 font-medium text-[11px] shadow-2xs">
+                      <span className="text-brand-light-text dark:text-gray-400 text-[10px]">Vl. Unit.:</span>
+                      <strong className="text-brand-text dark:text-white font-bold">{formatCurrency(item.unitPrice)}</strong>
+                    </span>
+                  </div>
+                  
+                  <div className="inline-flex items-center gap-1.5 bg-rose-100/70 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-brand-primary dark:text-rose-300 px-2.5 py-0.5 rounded-md font-medium text-xs shadow-2xs">
+                    <span className="text-[10px] font-semibold text-rose-700/80 dark:text-rose-300">Vl. Total:</span>
+                    <strong className="font-bold">{formatCurrency(item.totalPrice)}</strong>
                   </div>
                 </div>
 
-                {/* Item Controls Row */}
-                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-12 gap-3 items-end">
-                  {/* Category Selector */}
-                  <div className="md:col-span-3">
-                    <label className="block text-[11px] font-semibold text-brand-light-text dark:text-gray-400 mb-1">
-                      Destino do Item
+                {/* Linha 3: Form fields com DESTINO e AÇÃO LADO A LADO no mobile e desktop */}
+                <div className="p-2.5 sm:p-3 grid grid-cols-12 gap-2 sm:gap-2.5 items-end">
+                  
+                  {/* Destino (col-span-6 no mobile, col-span-3 no desktop) */}
+                  <div className={isIgnore ? 'col-span-12' : 'col-span-6 sm:col-span-3'}>
+                    <label className="block text-[10px] font-bold uppercase text-brand-light-text dark:text-gray-400 tracking-wider mb-1">
+                      Destino
                     </label>
                     <select
                       value={item.category}
                       onChange={(e) => handleItemChange(item.id, { category: e.target.value as any })}
-                      className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-gray-700 border border-rose-200 dark:border-gray-600 rounded-xl font-medium focus:ring-2 focus:ring-brand-primary outline-none"
+                      className="w-full h-8 px-2 text-xs bg-rose-50/40 dark:bg-gray-700 border border-rose-200 dark:border-gray-600 rounded-lg font-medium text-brand-text dark:text-gray-100 focus:bg-white focus:border-brand-primary focus:ring-1 focus:ring-brand-primary outline-none transition"
                     >
                       <option value="ingredient">🥣 Ingrediente</option>
                       <option value="packaging">📦 Embalagem</option>
-                      <option value="ignore">❌ Ignorar / Não Insumo</option>
+                      <option value="ignore">❌ Ignorar</option>
                     </select>
                   </div>
 
                   {!isIgnore && (
                     <>
-                      {/* Link Type (New vs Existing) */}
-                      <div className="md:col-span-3">
-                        <label className="block text-[11px] font-semibold text-brand-light-text dark:text-gray-400 mb-1 flex items-center justify-between">
-                          <span>Ação de Cadastro</span>
-                          {item.linkType === 'existing' && (
-                            <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold flex items-center gap-1">
-                              <LinkIcon className="w-3 h-3" /> Vinculado
-                            </span>
-                          )}
+                      {/* Ação (col-span-6 no mobile, col-span-2 no desktop) - LADO A LADO COM DESTINO */}
+                      <div className="col-span-6 sm:col-span-2">
+                        <label className="block text-[10px] font-bold uppercase text-brand-light-text dark:text-gray-400 tracking-wider mb-1">
+                          Ação
                         </label>
                         <select
                           value={item.linkType}
@@ -523,64 +536,83 @@ export const ReviewReceiptModal: React.FC<ReviewReceiptModalProps> = ({
                               targetName
                             });
                           }}
-                          className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-gray-700 border border-rose-200 dark:border-gray-600 rounded-xl font-medium focus:ring-2 focus:ring-brand-primary outline-none"
+                          className={`w-full h-8 px-2 text-xs rounded-lg font-medium outline-none border transition ${
+                            item.linkType === 'existing'
+                              ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-300 dark:border-blue-600 text-blue-900 dark:text-blue-200'
+                              : 'bg-rose-50/40 dark:bg-gray-700 border-rose-200 dark:border-gray-600 text-brand-text dark:text-gray-100 focus:bg-white focus:border-brand-primary'
+                          }`}
                         >
-                          <option value="new">✨ Cadastrar como Novo</option>
-                          <option value="existing">🔗 Vincular a Existente</option>
+                          <option value="new">✨ Novo</option>
+                          <option value="existing">🔗 Vincular</option>
                         </select>
                       </div>
 
-                      {/* Product Name or Selection */}
-                      <div className="md:col-span-3">
+                      {/* Nome no Sistema ou Seleção com Pesquisa (col-span-12 no mobile, col-span-4 no desktop) */}
+                      <div className="col-span-12 sm:col-span-4">
+                        <div className="text-[10px] font-bold uppercase text-brand-light-text dark:text-gray-400 tracking-wider mb-1 flex items-center justify-between">
+                          <span>{item.linkType === 'new' ? 'Nome no Sistema' : 'Vincular Existente'}</span>
+                          {item.linkType === 'existing' && item.existingTargetId && (
+                            <span className="text-[9px] text-blue-600 dark:text-blue-400 font-bold flex items-center gap-0.5">
+                              <LinkIcon className="w-2.5 h-2.5" /> Vinculado
+                            </span>
+                          )}
+                        </div>
+
                         {item.linkType === 'new' ? (
-                          <>
-                            <label className="block text-[11px] font-semibold text-brand-light-text dark:text-gray-400 mb-1">
-                              Nome no Sistema
-                            </label>
-                            <input
-                              type="text"
-                              value={item.targetName}
-                              onChange={(e) => handleItemChange(item.id, { targetName: e.target.value })}
-                              className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-gray-700 border border-rose-200 dark:border-gray-600 rounded-xl font-medium focus:ring-2 focus:ring-brand-primary outline-none"
-                              placeholder="Ex: Nata Frimesa"
-                            />
-                          </>
+                          <input
+                            type="text"
+                            value={item.targetName}
+                            onChange={(e) => handleItemChange(item.id, { targetName: e.target.value })}
+                            className="w-full h-8 px-2.5 text-xs bg-rose-50/40 dark:bg-gray-700 border border-rose-200 dark:border-gray-600 rounded-lg font-medium text-brand-text dark:text-gray-100 focus:bg-white focus:border-brand-primary focus:ring-1 focus:ring-brand-primary outline-none transition placeholder:text-gray-400"
+                            placeholder="Nome para cadastrar..."
+                          />
                         ) : (
-                          <>
-                            <label className="block text-[11px] font-semibold text-blue-700 dark:text-blue-300 mb-1">
-                              Selecionar Item Existente
-                            </label>
+                          <div className="bg-blue-50/70 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-lg p-1.5 space-y-1">
+                            {/* Barra de pesquisa rápida para achar o item */}
+                            <div className="relative">
+                              <SearchIcon className="w-3.5 h-3.5 text-blue-500 absolute left-2 top-2 pointer-events-none" />
+                              <input
+                                type="text"
+                                value={searchFilter[item.id] || ''}
+                                onChange={(e) =>
+                                  setSearchFilter((prev) => ({ ...prev, [item.id]: e.target.value }))
+                                }
+                                placeholder="Filtrar existentes..."
+                                className="w-full h-7 pl-6 pr-2 text-xs bg-white dark:bg-gray-700 border border-blue-200 dark:border-blue-700 rounded text-slate-800 dark:text-gray-100 placeholder:text-gray-400 focus:ring-1 focus:ring-blue-500 outline-none"
+                              />
+                            </div>
+                            
                             <select
                               value={item.existingTargetId || ''}
                               onChange={(e) => handleItemChange(item.id, { existingTargetId: e.target.value })}
-                              className="w-full px-2.5 py-1.5 text-xs bg-blue-50 dark:bg-gray-700 border border-blue-300 dark:border-blue-600 rounded-xl font-semibold text-blue-900 dark:text-blue-100 focus:ring-2 focus:ring-blue-500 outline-none"
+                              className="w-full h-8 px-2 text-xs bg-white dark:bg-gray-700 border border-blue-300 dark:border-blue-600 rounded font-medium text-blue-950 dark:text-blue-100 focus:ring-1 focus:ring-blue-500 outline-none truncate"
                             >
                               <option value="" disabled>
-                                Escolha um item...
+                                Selecione ({isIngredient ? filteredIngredients.length : filteredPackaging.length} encontrados)...
                               </option>
                               {isIngredient &&
-                                existingIngredients.map((ing) => (
+                                filteredIngredients.map((ing) => (
                                   <option key={ing.id} value={ing.id}>
-                                    {ing.name} ({ing.packageAmount} {ing.unit} - {formatCurrency(ing.packagePrice)})
+                                    {ing.name} ({ing.packageAmount}{ing.unit} - {formatCurrency(ing.packagePrice)})
                                   </option>
                                 ))}
                               {isPackaging &&
-                                existingPackaging.map((pkg) => (
+                                filteredPackaging.map((pkg) => (
                                   <option key={pkg.id} value={pkg.id}>
-                                    {pkg.name} ({pkg.amount} {pkg.unit} - {formatCurrency(pkg.price)})
+                                    {pkg.name} ({pkg.amount}{pkg.unit} - {formatCurrency(pkg.price)})
                                   </option>
                                 ))}
                             </select>
-                          </>
+                          </div>
                         )}
                       </div>
 
-                      {/* Package Amount & Unit */}
-                      <div className="md:col-span-3 grid grid-cols-2 gap-1.5">
-                        <div>
-                          <label className="block text-[11px] font-semibold text-brand-light-text dark:text-gray-400 mb-1">
-                            Qtd. Embalagem
-                          </label>
+                      {/* Qtd. Embalagem & Unidade (col-span-12 no mobile, col-span-3 no desktop) */}
+                      <div className="col-span-12 sm:col-span-3">
+                        <label className="block text-[10px] font-bold uppercase text-brand-light-text dark:text-gray-400 tracking-wider mb-1">
+                          Qtd. Emb. & Unid.
+                        </label>
+                        <div className="grid grid-cols-2 gap-1.5">
                           <input
                             type="number"
                             step="any"
@@ -588,32 +620,28 @@ export const ReviewReceiptModal: React.FC<ReviewReceiptModalProps> = ({
                             onChange={(e) =>
                               handleItemChange(item.id, { packageAmount: safeParseFloat(e.target.value) })
                             }
-                            className="w-full px-2 py-1.5 text-xs bg-white dark:bg-gray-700 border border-rose-200 dark:border-gray-600 rounded-xl font-medium focus:ring-2 focus:ring-brand-primary outline-none"
+                            className="w-full h-8 px-2 text-xs text-center bg-rose-50/40 dark:bg-gray-700 border border-rose-200 dark:border-gray-600 rounded-lg font-semibold text-brand-text dark:text-gray-100 focus:bg-white focus:border-brand-primary focus:ring-1 focus:ring-brand-primary outline-none transition"
+                            placeholder="Qtd"
                           />
-                        </div>
-                        <div>
-                          <label className="block text-[11px] font-semibold text-brand-light-text dark:text-gray-400 mb-1">
-                            Unidade
-                          </label>
                           <select
                             value={item.targetUnit}
                             onChange={(e) => handleItemChange(item.id, { targetUnit: e.target.value as any })}
-                            className="w-full px-2 py-1.5 text-xs bg-white dark:bg-gray-700 border border-rose-200 dark:border-gray-600 rounded-xl font-medium focus:ring-2 focus:ring-brand-primary outline-none"
+                            className="w-full h-8 px-2 text-xs bg-rose-50/40 dark:bg-gray-700 border border-rose-200 dark:border-gray-600 rounded-lg font-semibold text-brand-text dark:text-gray-100 focus:bg-white focus:border-brand-primary focus:ring-1 focus:ring-brand-primary outline-none transition"
                           >
                             {isIngredient ? (
                               <>
-                                <option value="g">g (Gramas)</option>
-                                <option value="kg">kg (Quilos)</option>
-                                <option value="ml">ml (Mililitros)</option>
-                                <option value="l">l (Litros)</option>
-                                <option value="un">un (Unidade)</option>
+                                <option value="g">g</option>
+                                <option value="kg">kg</option>
+                                <option value="ml">ml</option>
+                                <option value="l">l</option>
+                                <option value="un">un</option>
                               </>
                             ) : (
                               <>
-                                <option value="un">un (Unidade)</option>
-                                <option value="pacote">pacote</option>
+                                <option value="un">un</option>
+                                <option value="pacote">pct</option>
                                 <option value="rolo">rolo</option>
-                                <option value="m">m (Metros)</option>
+                                <option value="m">m</option>
                               </>
                             )}
                           </select>
@@ -625,41 +653,59 @@ export const ReviewReceiptModal: React.FC<ReviewReceiptModalProps> = ({
               </div>
             );
           })}
+
+          {/* Botão de Adicionar Item no final da rolagem */}
+          <div className="pt-2 pb-4 flex justify-center">
+            <button
+              type="button"
+              onClick={handleAddNewManualItem}
+              className="py-2 px-4 bg-white dark:bg-gray-800 border-2 border-dashed border-rose-200 dark:border-gray-600 hover:border-brand-primary hover:bg-rose-50/70 dark:hover:bg-gray-700 text-brand-primary dark:text-rose-300 rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-xs"
+            >
+              <PlusIcon className="w-4 h-4" />
+              <span>+ Adicionar Outro Item ao Cupom</span>
+            </button>
+          </div>
         </div>
 
-        {/* Footer Summary & Action */}
-        <div className="p-4 sm:p-6 bg-rose-50/80 dark:bg-gray-900/80 border-t border-rose-100 dark:border-gray-700 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-3 text-xs sm:text-sm">
-            <span className="px-3 py-1 bg-green-100 dark:bg-green-950/40 text-green-800 dark:text-green-300 rounded-lg font-semibold">
+        {/* =========================================================================
+            FOOTER BAR (Compatível com Barra Inferior do iPhone / Home Bar)
+           ========================================================================= */}
+        <div 
+          style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 0.75rem)' }}
+          className="p-3 sm:p-3.5 bg-white dark:bg-gray-800 border-t border-rose-100 dark:border-gray-700 flex flex-wrap items-center justify-between gap-2 flex-shrink-0 shadow-xs"
+        >
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="px-2 py-1 bg-rose-50 dark:bg-rose-950/40 text-brand-primary dark:text-rose-300 border border-rose-200 dark:border-rose-800 rounded-md font-bold text-[11px]">
               ✨ Novos: {newIngredientsCount + newPackagingCount}
             </span>
-            <span className="px-3 py-1 bg-blue-100 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 rounded-lg font-semibold">
-              🔗 Vinculados a Atualizar: {linkedIngredientsCount + linkedPackagingCount}
+            <span className="px-2 py-1 bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800 rounded-md font-bold text-[11px]">
+              🔗 Vincular: {linkedIngredientsCount + linkedPackagingCount}
             </span>
-            <span className="font-bold text-brand-text dark:text-white">
+            <span className="font-bold text-brand-text dark:text-white text-xs sm:text-sm ml-1">
               Total: {formatCurrency(calculateTotalReceipt)}
             </span>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5 ml-auto">
             <button
               type="button"
               onClick={onClose}
-              className="py-2.5 px-4 text-xs sm:text-sm font-semibold text-gray-500 dark:text-gray-400 hover:text-brand-text transition"
+              className="py-2 px-3 text-xs sm:text-sm font-semibold text-brand-light-text dark:text-gray-300 hover:text-brand-text transition"
             >
               Cancelar
             </button>
             <button
               type="button"
               onClick={handleConfirmAll}
-              className="py-3 px-6 bg-brand-primary hover:bg-rose-600 text-white font-bold rounded-2xl shadow-lg shadow-rose-500/25 transition flex items-center gap-2 text-xs sm:text-sm"
+              className="py-2 px-4 bg-brand-primary hover:bg-rose-600 text-white font-bold rounded-xl shadow-md shadow-rose-500/25 transition flex items-center gap-1.5 text-xs sm:text-sm"
             >
-              <CheckCircleIcon className="w-5 h-5" />
-              Confirmar e Atualizar Cadastros
+              <CheckCircleIcon className="w-4 h-4" />
+              <span>Confirmar & Atualizar</span>
             </button>
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

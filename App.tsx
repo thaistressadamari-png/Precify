@@ -521,9 +521,9 @@ const App: React.FC = () => {
           </div>
         </header>
 
-        <div className="lg:grid lg:grid-cols-12 lg:gap-8">
+        <div className="lg:grid lg:grid-cols-12 lg:gap-8 min-w-0 max-w-full">
           {/* Navigation - Horizontal scroll on mobile, vertical sidebar on desktop */}
-          <aside className="lg:col-span-2 mb-6 lg:mb-0">
+          <aside className="lg:col-span-2 mb-6 lg:mb-0 min-w-0">
             <nav className="flex lg:flex-col overflow-x-auto no-scrollbar gap-1.5 sm:gap-2 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-2 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700">
               <NavItem label="Dashboard" targetPage="dashboard" icon={ChartBarIcon} />
               <NavItem label="Compras & Notas" targetPage="purchases" icon={ReceiptIcon} />
@@ -543,7 +543,7 @@ const App: React.FC = () => {
               </button>
             </nav>
           </aside>
-          <main className="lg:col-span-10">{renderPage()}</main>
+          <main className="lg:col-span-10 min-w-0 max-w-full overflow-x-hidden">{renderPage()}</main>
         </div>
       </div>
     </div>

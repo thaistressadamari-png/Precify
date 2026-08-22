@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import type { InvoiceReceipt } from '../types';
 import { XMarkIcon } from './icons/XMarkIcon';
 import { TrashIcon } from './icons/TrashIcon';
@@ -23,8 +24,8 @@ export const ReceiptDetailsModal: React.FC<ReceiptDetailsModalProps> = ({
     year: 'numeric'
   });
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-fade-in">
+  return createPortal(
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-fade-in">
       <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl border border-rose-100 dark:border-gray-700 w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="p-6 border-b border-rose-100 dark:border-gray-700 flex justify-between items-center bg-rose-50/60 dark:bg-gray-800/60">
@@ -149,6 +150,7 @@ export const ReceiptDetailsModal: React.FC<ReceiptDetailsModalProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

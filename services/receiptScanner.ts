@@ -446,6 +446,43 @@ export const parseNfeXml = (xmlText: string): ParsedReceiptData => {
   };
 };
 
+// Fetch & parse NFC-e URL from SEFAZ using server-side endpoint (/api/fetch-nfce-url)
+export const fetchNfceFromUrl = async (url: string): Promise<ParsedReceiptData> => {
+  console.log('📡 [RECEIPT SCANNER] Iniciando requisição para /api/fetch-nfce-url...');
+  console.log('🔗 [RECEIPT SCANNER] URL do cupom:', url);
+  let response: globalThis.Response;
+  try {
+    response = await fetch('/api/fetch-nfce-url', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ url })
+    });
+  } catch (err: any) {
+    console.error('❌ [RECEIPT SCANNER] Erro de rede ao chamar /api/fetch-nfce-url:', err);
+    throw new Error('Não foi possível conectar ao servidor para consultar o QR Code da SEFAZ.');
+  }
+
+  console.log(`📡 [RECEIPT SCANNER] Resposta recebida da API: Status ${response.status}`);
+
+  if (!response.ok) {
+    let errorDetail = 'Falha ao consultar a nota fiscal no servidor da SEFAZ.';
+    try {
+      const errJson = await response.json();
+      errorDetail = errJson.error || errorDetail;
+    } catch {
+      errorDetail = `Erro (${response.status}): ${response.statusText}`;
+    }
+    console.error('❌ [RECEIPT SCANNER] Erro retornado pela API da SEFAZ:', errorDetail);
+    throw new Error(errorDetail);
+  }
+
+  const data = await response.json();
+  console.log('✅ [RECEIPT SCANNER] Dados fiscais e itens obtidos com sucesso:', data);
+  return data as ParsedReceiptData;
+};
+
 // Parse Receipt Photo / Document using Server-Side Gemini API Proxy (/api/parse-receipt)
 export const parseReceiptImageWithGemini = async (imageBase64: string, mimeType: string = 'image/jpeg'): Promise<ParsedReceiptData> => {
   let response: globalThis.Response;
@@ -492,6 +529,143 @@ export const parseReceiptImageWithGemini = async (imageBase64: string, mimeType:
 
   const data = await response.json();
   return data as ParsedReceiptData;
+};
+
+// Parse plain text or copied content from SEFAZ portal / NFC-e websites
+export const parseNfceTextContent = (textContent: string): ParsedReceiptData => {
+  const lines = textContent.split('\n').map((l) => l.trim()).filter(Boolean);
+  let supplier = 'Fornecedor / NFC-e';
+  let cnpj: string | undefined;
+  let totalAmount = 0;
+  let accessKey: string | undefined;
+  let date: string = new Date().toISOString().substring(0, 10);
+  let nfcNumber: string | undefined;
+  let series: string | undefined;
+  let paymentMethod = 'Não informado';
+  const items: ParsedReceiptData['items'] = [];
+
+  // Check 44-digit access key
+  const cleanAll = textContent.replace(/[\s.-]/g, '');
+  const keyMatch = cleanAll.match(/\b\d{44}\b/) || textContent.match(/Chave\s*(?:de\s*Acesso)?:?\s*([\d\s.-]{44,60})/i);
+  if (keyMatch) {
+    accessKey = (keyMatch[1] || keyMatch[0]).replace(/[\s.-]/g, '');
+    if (accessKey.length === 44) {
+      const yearMonth = accessKey.substring(2, 6);
+      date = `20${yearMonth.substring(0, 2)}-${yearMonth.substring(2, 4)}-01`;
+      const rawCnpj = accessKey.substring(6, 20);
+      cnpj = rawCnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+      series = accessKey.substring(22, 25);
+      nfcNumber = accessKey.substring(25, 34).replace(/^0+/, '');
+    }
+  }
+
+  // Find Supplier and CNPJ in text headers
+  for (let i = 0; i < Math.min(lines.length, 12); i++) {
+    const l = lines[i];
+    const cnpjMatch = l.match(/\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/);
+    if (cnpjMatch) {
+      cnpj = cnpjMatch[0];
+      if (i > 0) {
+        const candidate = lines[i - 1];
+        if (
+          !candidate.toLowerCase().includes('documento') &&
+          !candidate.toLowerCase().includes('nfc-e') &&
+          !candidate.toLowerCase().includes('secretaria')
+        ) {
+          supplier = candidate;
+        }
+      }
+    }
+    const dateMatch = l.match(/(?:Emiss[aã]o|Data):\s*(\d{2})\/(\d{2})\/(\d{4})/i);
+    if (dateMatch) {
+      date = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`;
+    }
+  }
+
+  // Parse SEFAZ items pattern:
+  // ITEM NAME (Código: ...)
+  // Qtde.: 1 UN: UN Vl. Unit.: 2,15 Vl. Total 2,15
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const itemDetailsMatch = line.match(
+      /Qtde\.?:?\s*([\d.,]+)\s*UN:?\s*([A-Za-z0-9]+)\s*Vl\.\s*Unit\.?:?\s*([\d.,]+)\s*Vl\.\s*Total:?\s*([\d.,]+)/i
+    );
+
+    if (itemDetailsMatch) {
+      const prevLine = i > 0 ? lines[i - 1] : 'Item';
+      const codeMatch = prevLine.match(/\(C[oó]digo:\s*([^\)]+)\)/i);
+      const rawName = prevLine.replace(/\(C[oó]digo:[^\)]+\)/i, '').trim() || 'Item sem descrição';
+      const quantity = parseFloat(itemDetailsMatch[1].replace(',', '.')) || 1;
+      const unit = itemDetailsMatch[2] || 'UN';
+      const unitPrice = parseFloat(itemDetailsMatch[3].replace(',', '.')) || 0;
+      const totalPrice = parseFloat(itemDetailsMatch[4].replace(',', '.')) || quantity * unitPrice;
+
+      const category = guessCategory(rawName);
+      const specs = guessPackageSpecs(rawName, unit, quantity, unitPrice, totalPrice);
+
+      items.push({
+        rawName,
+        code: codeMatch ? codeMatch[1].trim() : '',
+        quantity,
+        unit,
+        unitPrice: unitPrice > 0 ? unitPrice : (quantity > 0 ? totalPrice / quantity : totalPrice),
+        totalPrice,
+        category,
+        suggestedPackageAmount: specs.amount,
+        suggestedUnit: specs.unit
+      });
+    }
+
+    // Secondary table format (Code Name Qty Unit Price Total)
+    const genericTableMatch = line.match(/^([A-Za-z0-9\s/._-]+?)\s+([\d.,]+)\s+(KG|G|UN|UND|L|ML|CX|PCT|ROLO|M)\s+X?\s*([\d.,]+)\s+([\d.,]+)$/i);
+    if (!itemDetailsMatch && genericTableMatch) {
+      const rawName = genericTableMatch[1].trim();
+      const quantity = parseFloat(genericTableMatch[2].replace(',', '.')) || 1;
+      const unit = genericTableMatch[3];
+      const unitPrice = parseFloat(genericTableMatch[4].replace(',', '.')) || 0;
+      const totalPrice = parseFloat(genericTableMatch[5].replace(',', '.')) || quantity * unitPrice;
+
+      const category = guessCategory(rawName);
+      const specs = guessPackageSpecs(rawName, unit, quantity, unitPrice, totalPrice);
+
+      items.push({
+        rawName,
+        quantity,
+        unit,
+        unitPrice: unitPrice > 0 ? unitPrice : (quantity > 0 ? totalPrice / quantity : totalPrice),
+        totalPrice,
+        category,
+        suggestedPackageAmount: specs.amount,
+        suggestedUnit: specs.unit
+      });
+    }
+
+    // Check payment & total
+    const totalMatch = line.match(/(?:Valor\s+a\s+pagar|Valor\s+Total|Total\s+R\$|TOTAL)\s*R?\$?:?\s*([\d.,]+)/i);
+    if (totalMatch && !totalAmount) {
+      totalAmount = parseFloat(totalMatch[1].replace(',', '.')) || 0;
+    }
+    const payMatch = line.match(/Forma\s+de\s+pagamento:?\s*([A-Za-zÀ-ÿ\s]+)/i);
+    if (payMatch) {
+      paymentMethod = payMatch[1].trim();
+    }
+  }
+
+  if (totalAmount === 0 && items.length > 0) {
+    totalAmount = items.reduce((sum, item) => sum + item.totalPrice, 0);
+  }
+
+  return {
+    supplier,
+    cnpj,
+    date,
+    accessKey,
+    nfcNumber,
+    series,
+    totalAmount,
+    paymentMethod,
+    items
+  };
 };
 
 // Automatic Fuzzy Matching to link with existing ingredients or packaging
