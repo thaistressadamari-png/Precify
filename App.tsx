@@ -220,11 +220,35 @@ const App: React.FC = () => {
     fetchData();
   }, [userId]);
   
+  const cleanForFirestore = useCallback((obj: any): any => {
+    if (obj === undefined || obj === null) return null;
+    if (typeof obj === 'function') return null;
+    if (Array.isArray(obj)) {
+      return obj.map(item => cleanForFirestore(item)).filter(item => item !== undefined);
+    }
+    if (typeof obj === 'object' && !(obj instanceof Date)) {
+      const cleaned: Record<string, any> = {};
+      for (const [key, value] of Object.entries(obj)) {
+        if (value !== undefined) {
+          cleaned[key] = cleanForFirestore(value);
+        }
+      }
+      return cleaned;
+    }
+    return obj;
+  }, []);
+
   const saveData = useCallback(async (dataToSave: any) => {
     if (!userId) return;
     const userDocRef = doc(db, "appData", userId);
-    try { await setDoc(userDocRef, dataToSave); } catch (error) { console.error(error); }
-  }, [userId]);
+    try {
+      const sanitized = cleanForFirestore(dataToSave);
+      await setDoc(userDocRef, sanitized);
+      console.log('✅ [FIRESTORE] Dados sincronizados com sucesso na nuvem!');
+    } catch (error) {
+      console.error('❌ [FIRESTORE] Falha ao sincronizar dados com o Firebase:', error);
+    }
+  }, [userId, cleanForFirestore]);
 
   useEffect(() => {
     const handler = setTimeout(() => {
