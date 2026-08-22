@@ -1,16 +1,11 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import jsQR from 'jsqr';
 import { XMarkIcon } from './icons/XMarkIcon';
 import { CameraIcon } from './icons/CameraIcon';
 import { QrCodeIcon } from './icons/QrCodeIcon';
 import { ArrowUpTrayIcon } from './icons/ArrowUpTrayIcon';
-import {
-  scanBarcodeOrQrFromImage,
-  decodeAnyBarcodeOrQrFromCanvas,
-  compressImageForOcr,
-  parseNfceTextContent,
-  ParsedReceiptData
-} from '../services/receiptScanner';
+import { scanQrFromImage, compressImageForOcr, parseNfceTextContent, ParsedReceiptData } from '../services/receiptScanner';
 
 interface CameraReceiptModalProps {
   isOpen: boolean;
@@ -34,17 +29,15 @@ export const CameraReceiptModal: React.FC<CameraReceiptModalProps> = ({
   const [isStreaming, setIsStreaming] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
   const [hasTorch, setHasTorch] = useState(false);
-  const [scannedCodeFeedback, setScannedCodeFeedback] = useState<{ text: string; isBarcode: boolean } | null>(null);
+  const [scannedCodeFeedback, setScannedCodeFeedback] = useState<string | null>(null);
   const [manualAccessKey, setManualAccessKey] = useState('');
   const [pastedText, setPastedText] = useState('');
-  const [isScanningFrame, setIsScanningFrame] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationFrameId = useRef<number | null>(null);
   const fileUploadInputRef = useRef<HTMLInputElement | null>(null);
-  const isDecodingRef = useRef(false);
 
   // Lock body scroll when camera modal is active
   useEffect(() => {
@@ -72,7 +65,6 @@ export const CameraReceiptModal: React.FC<CameraReceiptModalProps> = ({
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
-    isDecodingRef.current = false;
     setIsStreaming(false);
     setTorchOn(false);
     setHasTorch(false);
@@ -155,12 +147,9 @@ export const CameraReceiptModal: React.FC<CameraReceiptModalProps> = ({
     }
   };
 
-  // Continuous Barcode & QR scan loop using multi-format detector
-  const scanQrFrame = useCallback(async () => {
-    if (!videoRef.current || !canvasRef.current || mode !== 'qrcode' || isDecodingRef.current) {
-      if (mode === 'qrcode' && !isDecodingRef.current) {
-        animationFrameId.current = requestAnimationFrame(scanQrFrame);
-      }
+  // Continuous QR scan loop using jsQR
+  const scanQrFrame = useCallback(() => {
+    if (!videoRef.current || !canvasRef.current || mode !== 'qrcode') {
       return;
     }
 
@@ -170,49 +159,40 @@ export const CameraReceiptModal: React.FC<CameraReceiptModalProps> = ({
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
       if (ctx) {
+        // Target a reasonable dimension for speedy processing (e.g. max 800px)
         let w = video.videoWidth;
         let h = video.videoHeight;
-        if (w > 1200) {
-          h = Math.round((h * 1200) / w);
-          w = 1200;
+        if (w > 960) {
+          h = Math.round((h * 960) / w);
+          w = 960;
         }
 
         canvas.width = w;
         canvas.height = h;
         ctx.drawImage(video, 0, 0, w, h);
 
-        isDecodingRef.current = true;
-        try {
-          const detectedText = await decodeAnyBarcodeOrQrFromCanvas(canvas, ctx);
+        const imageData = ctx.getImageData(0, 0, w, h);
+        const code = jsQR(imageData.data, imageData.width, imageData.height, {
+          inversionAttempts: 'attemptBoth'
+        });
 
-          if (detectedText && detectedText.trim().length > 0) {
-            const clean = detectedText.trim();
-            const isBarcode = /^\d{12,44}$/.test(clean.replace(/[\s.-]/g, ''));
-            console.log(`📷 [CAMERA MODAL] ${isBarcode ? 'Código de barras' : 'QR Code'} detectado em vídeo:`, clean);
-            
-            setScannedCodeFeedback({
-              text: clean,
-              isBarcode
-            });
-
-            try {
-              if (navigator.vibrate) {
-                navigator.vibrate([100, 50, 100]);
-              }
-            } catch {
-              // ignore
+        if (code && code.data && code.data.trim().length > 0) {
+          // Found QR Code!
+          console.log('📷 [CAMERA MODAL] QR Code detectado em vídeo:', code.data);
+          setScannedCodeFeedback(code.data);
+          try {
+            if (navigator.vibrate) {
+              navigator.vibrate([100, 50, 100]);
             }
-
-            setTimeout(() => {
-              stopStream();
-              onScanSuccess(clean);
-            }, 300);
-            return;
+          } catch (e) {
+            // ignore
           }
-        } catch (e) {
-          // ignore scan error and continue
-        } finally {
-          isDecodingRef.current = false;
+
+          setTimeout(() => {
+            stopStream();
+            onScanSuccess(code.data);
+          }, 300);
+          return;
         }
       }
     }
@@ -249,26 +229,43 @@ export const CameraReceiptModal: React.FC<CameraReceiptModalProps> = ({
     }
   }, [isOpen, isStreaming, mode, scanQrFrame]);
 
+  // Snapshot capture for AI reading with instant client compression
+  const handleTakeSnapshot = async () => {
+    if (!videoRef.current || !onCapturePhoto) return;
+    const video = videoRef.current;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth || 1600;
+    canvas.height = video.videoHeight || 1200;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const rawBase64 = canvas.toDataURL('image/jpeg', 0.85);
+      const compressed = await compressImageForOcr(rawBase64, 1600, 0.82);
+      stopStream();
+      onCapturePhoto(compressed);
+    }
+  };
+
   // Switch camera device
   const handleSwitchCamera = (newDeviceId: string) => {
     setSelectedDeviceId(newDeviceId);
     startCamera(newDeviceId);
   };
 
-  // Barcode / QR scan from uploaded picture
+  // QR scan from uploaded picture fallback
   const handleScanFromImageFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      console.log('🖼️ [CAMERA MODAL] Processando imagem para detectar Código de Barras ou QR Code...');
-      const codeData = await scanBarcodeOrQrFromImage(file);
-      if (codeData) {
-        console.log('✅ [CAMERA MODAL] Código decodificado da foto do arquivo:', codeData);
+      console.log('🖼️ [CAMERA MODAL] Processando imagem de QR Code enviada por arquivo...');
+      const qrData = await scanQrFromImage(file);
+      if (qrData) {
+        console.log('✅ [CAMERA MODAL] QR Code decodificado da foto do arquivo:', qrData);
         stopStream();
-        onScanSuccess(codeData);
+        onScanSuccess(qrData);
       } else if (onCapturePhoto) {
-        // If not a recognized barcode, prompt user to read photo with AI
-        const proceedWithAi = confirm('Não foi possível ler o código de barras diretamente na foto. Deseja que a Inteligência Artificial leia todos os dados e itens da nota fiscal nesta foto?');
+        // If not a QR code, prompt user to read photo with AI
+        const proceedWithAi = confirm('Não foi possível ler o QR code diretamente na foto. Deseja que a Inteligência Artificial leia todos os dados e itens do cupom nesta foto?');
         if (proceedWithAi) {
           console.log('🤖 [CAMERA MODAL] Usuário optou por processar foto via IA...');
           const compressed = await compressImageForOcr(file, 1600, 0.82);
@@ -276,8 +273,8 @@ export const CameraReceiptModal: React.FC<CameraReceiptModalProps> = ({
           onCapturePhoto(compressed);
         }
       } else {
-        console.warn('⚠️ [CAMERA MODAL] Nenhum código de barras ou QR code detectado na imagem enviada.');
-        alert('Nenhum código de barras ou QR Code legível foi detectado na imagem selecionada. Tente com outra foto mais nítida ou aproximada.');
+        console.warn('⚠️ [CAMERA MODAL] Nenhum QR code detectado na imagem enviada.');
+        alert('Nenhum QR Code legível foi detectado na imagem selecionada. Tente com outra foto mais nítida.');
       }
     } catch (err) {
       console.error('❌ [CAMERA MODAL] Erro ao processar imagem:', err);
@@ -291,7 +288,7 @@ export const CameraReceiptModal: React.FC<CameraReceiptModalProps> = ({
   const handleSubmitPastedText = (e: React.FormEvent) => {
     e.preventDefault();
     if (!pastedText.trim()) {
-      alert('Cole o texto copiado da consulta da nota fiscal ou da SEFAZ.');
+      alert('Cole o texto copiado da consulta do cupom fiscal ou da SEFAZ.');
       return;
     }
     console.log('📋 [CAMERA MODAL] Processando texto colado do cupom/SEFAZ...');
@@ -342,7 +339,7 @@ export const CameraReceiptModal: React.FC<CameraReceiptModalProps> = ({
       {/* Hidden canvas for video processing */}
       <canvas ref={canvasRef} className="hidden" />
 
-      {/* Hidden file input for barcode / QR image upload fallback */}
+      {/* Hidden file input for QR code image upload fallback */}
       <input
         type="file"
         ref={fileUploadInputRef}
@@ -370,14 +367,14 @@ export const CameraReceiptModal: React.FC<CameraReceiptModalProps> = ({
             <div>
               <h2 className="font-display text-lg sm:text-xl font-bold text-brand-text dark:text-rose-100">
                 {mode === 'qrcode'
-                  ? 'Scanner de Código de Barras & QR'
+                  ? 'Scanner de QR Code'
                   : mode === 'pasteText'
                   ? 'Colar Texto da Consulta SEFAZ'
                   : 'Chave de Acesso da Nota'}
               </h2>
               <p className="text-xs text-brand-light-text dark:text-gray-400">
                 {mode === 'qrcode'
-                  ? 'Aponte a câmera para o Código de Barras (DANFE) ou QR Code'
+                  ? 'Aponte a câmera para o QR Code da nota fiscal'
                   : mode === 'pasteText'
                   ? 'Cole o texto copiado da página do governo / SEFAZ'
                   : '44 dígitos numéricos impressos na nota'}
@@ -395,7 +392,7 @@ export const CameraReceiptModal: React.FC<CameraReceiptModalProps> = ({
           </button>
         </div>
 
-        {/* Mode Selector (3 options: QR / Código de Barras, Colar Texto, Chave) */}
+        {/* Mode Selector (3 options: QR Code, Colar Texto, Chave) */}
         <div className="grid grid-cols-3 bg-rose-50 dark:bg-gray-900/60 p-1 mx-3 sm:mx-4 mt-3 rounded-2xl border border-rose-100 dark:border-gray-700 gap-1 text-[11px] sm:text-xs">
           <button
             type="button"
@@ -407,7 +404,7 @@ export const CameraReceiptModal: React.FC<CameraReceiptModalProps> = ({
             }`}
           >
             <QrCodeIcon className="w-3.5 h-3.5 flex-shrink-0" />
-            <span className="truncate">Câmera / Scanner</span>
+            <span className="truncate">QR Code</span>
           </button>
           <button
             type="button"
@@ -474,25 +471,24 @@ export const CameraReceiptModal: React.FC<CameraReceiptModalProps> = ({
             <form onSubmit={handleSubmitManualKey} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-brand-light-text dark:text-gray-300 mb-2">
-                  Chave de Acesso (44 dígitos da DANFE / NFC-e / NF-e)
+                  Chave de Acesso (44 dígitos da NFC-e / NF-e)
                 </label>
                 <textarea
                   value={manualAccessKey}
                   onChange={(e) => setManualAccessKey(e.target.value)}
                   rows={2}
-                  placeholder="Ex: 3526 0708 9911 8200 0383 5500 4000 6845 6311 8934 2849"
+                  placeholder="Ex: 3526 0807 2203 4000 0177 6502 2000 0272 1517 7208 0348"
                   className="w-full p-3 bg-rose-50/50 dark:bg-gray-700 border border-rose-200 dark:border-gray-600 rounded-2xl text-sm font-mono font-medium focus:ring-2 focus:ring-brand-primary outline-none"
                 />
                 
                 <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-xl text-xs text-amber-800 dark:text-amber-200 space-y-1">
-                  <p className="font-bold">💡 Dica para ler todos os itens da nota:</p>
+                  <p className="font-bold">💡 Por que a SEFAZ bloqueia consultas automáticas por robô?</p>
                   <p>
-                    Para extrair a lista completa de produtos comprados:
+                    O governo exige a resolução de CAPTCHA no navegador. Para puxar todos os itens da nota:
                   </p>
                   <ul className="list-disc pl-4 space-y-0.5 mt-1">
-                    <li>Envie a <strong>foto/arquivo da nota DANFE</strong> na aba de Compras para a IA ler todos os produtos automaticamente</li>
-                    <li>Ou envie o <strong>arquivo XML da NF-e</strong></li>
-                    <li>Ou cole o texto copiado do site da SEFAZ na aba <strong>Colar Texto</strong></li>
+                    <li>Suba o <strong>Print/Foto da tela</strong> do site da SEFAZ na aba <strong>Foto</strong></li>
+                    <li>Ou copie e cole o texto na aba <strong>Colar Texto</strong></li>
                   </ul>
                 </div>
               </div>
@@ -500,12 +496,12 @@ export const CameraReceiptModal: React.FC<CameraReceiptModalProps> = ({
               <div className="flex flex-col sm:flex-row gap-2 pt-1">
                 {manualAccessKey.replace(/[\s.-]/g, '').length >= 40 && (
                   <a
-                    href={`https://www.nfe.fazenda.gov.br/portal/consultaRecaptcha.aspx?tipoConsulta=completa&tipoConteudo=XbSeqxE8pl8=&chaveNFe=${manualAccessKey.replace(/[\s.-]/g, '')}`}
+                    href={`https://www.nfce.fazenda.sp.gov.br/NFCeConsultaPublica/Paginas/ConsultaPublica.aspx?chaveNFe=${manualAccessKey.replace(/[\s.-]/g, '')}`}
                     target="_blank"
                     rel="noreferrer"
                     className="py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-2xl transition flex items-center justify-center gap-1.5 text-center"
                   >
-                    <span>Consultar no Portal Nacional ↗</span>
+                    <span>Abrir na SEFAZ ↗</span>
                   </a>
                 )}
                 <button
@@ -538,7 +534,7 @@ export const CameraReceiptModal: React.FC<CameraReceiptModalProps> = ({
                     className="py-2.5 px-4 bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5"
                   >
                     <ArrowUpTrayIcon className="w-4 h-4" />
-                    Carregar Foto da Nota / Código de Barras
+                    Carregar Imagem / Foto do Cupom
                   </button>
                   <button
                     type="button"
@@ -564,7 +560,7 @@ export const CameraReceiptModal: React.FC<CameraReceiptModalProps> = ({
                   <button
                     type="button"
                     onClick={toggleTorch}
-                    className={`absolute top-3 right-3 p-2.5 rounded-full shadow-lg transition z-10 ${
+                    className={`absolute top-3 right-3 p-2.5 rounded-full shadow-lg transition ${
                       torchOn ? 'bg-amber-400 text-gray-950' : 'bg-black/60 text-white hover:bg-black/80'
                     }`}
                     title="Alternar Lanterna"
@@ -573,22 +569,18 @@ export const CameraReceiptModal: React.FC<CameraReceiptModalProps> = ({
                   </button>
                 )}
 
-                {/* Scanning Crosshairs & Frame Guide for Barcodes and QR Codes */}
+                {/* Scanning Crosshairs & Frame Guide */}
                 <div className="pointer-events-none absolute inset-0 m-6 flex flex-col justify-between">
                   <div className="flex justify-between">
                     <div className="w-8 h-8 border-t-4 border-l-4 border-rose-500 rounded-tl-lg" />
                     <div className="w-8 h-8 border-t-4 border-r-4 border-rose-500 rounded-tr-lg" />
                   </div>
 
-                  {/* Red Laser Scanning Bar for Linear Barcode and QR */}
-                  <div className="relative flex flex-col items-center justify-center w-full my-auto">
-                    <div className="w-full border-t border-dashed border-rose-400/40 my-2" />
-                    <div className="w-full h-0.5 bg-gradient-to-r from-transparent via-rose-500 to-transparent shadow-[0_0_12px_rgba(244,63,94,1)] animate-pulse" />
-                    <div className="w-full border-b border-dashed border-rose-400/40 my-2" />
-                    <span className="text-[10px] uppercase font-mono tracking-widest text-rose-300 bg-black/60 px-2 py-0.5 rounded-full mt-1">
-                      Alinhe o Código de Barras ou QR Code
-                    </span>
-                  </div>
+                  {mode === 'qrcode' && (
+                    <div className="relative flex items-center justify-center">
+                      <div className="w-full h-0.5 bg-gradient-to-r from-transparent via-rose-500 to-transparent shadow-[0_0_12px_rgba(244,63,94,0.9)] animate-pulse" />
+                    </div>
+                  )}
 
                   <div className="flex justify-between">
                     <div className="w-8 h-8 border-b-4 border-l-4 border-rose-500 rounded-bl-lg" />
@@ -598,17 +590,12 @@ export const CameraReceiptModal: React.FC<CameraReceiptModalProps> = ({
 
                 {/* Success Badge Feedback */}
                 {scannedCodeFeedback && (
-                  <div className="absolute inset-0 bg-emerald-600/80 backdrop-blur-sm flex flex-col items-center justify-center text-white p-4 animate-fade-in z-20">
+                  <div className="absolute inset-0 bg-emerald-600/70 backdrop-blur-sm flex flex-col items-center justify-center text-white p-4 animate-fade-in">
                     <div className="w-12 h-12 rounded-full bg-white text-emerald-600 flex items-center justify-center font-bold text-2xl mb-2 shadow-lg">
                       ✓
                     </div>
-                    <p className="font-bold text-sm">
-                      {scannedCodeFeedback.isBarcode ? 'Código de Barras Lido!' : 'QR Code Lido com Sucesso!'}
-                    </p>
-                    <p className="text-[11px] font-mono text-emerald-100 mt-1 max-w-[260px] truncate text-center bg-emerald-950/40 px-2 py-1 rounded">
-                      {scannedCodeFeedback.text}
-                    </p>
-                    <p className="text-[10px] text-emerald-200 mt-1">Processando nota fiscal...</p>
+                    <p className="font-bold text-sm">QR Code Lido com Sucesso!</p>
+                    <p className="text-[11px] text-emerald-100 mt-1">Carregando dados da nota...</p>
                   </div>
                 )}
               </div>
