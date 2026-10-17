@@ -12,6 +12,7 @@ import { ConfirmModal } from './ConfirmModal';
 import { ArrowDownTrayIcon } from './icons/ArrowDownTrayIcon';
 import { ArrowUpTrayIcon } from './icons/ArrowUpTrayIcon';
 import { DocumentDuplicateIcon } from './icons/DocumentDuplicateIcon';
+import { ClipboardListIcon } from './icons/ClipboardListIcon';
 
 interface RecipesProps {
   recipes: Recipe[];
@@ -25,14 +26,33 @@ interface RecipesProps {
   onImport: (newRecipes: Recipe[]) => void;
   type: 'recipe' | 'filling';
   onDuplicate: (recipe: Recipe) => void;
+  onGeneratePurchaseOrder?: (selections: { recipe: Recipe; batches: number }[]) => void;
 }
 
-export const Recipes: React.FC<RecipesProps> = ({ recipes, onAddNew, onEdit, onDelete, onViewDetails, ingredients, packagingItems, settings, onImport, type, onDuplicate }) => {
+export const Recipes: React.FC<RecipesProps> = ({
+  recipes,
+  onAddNew,
+  onEdit,
+  onDelete,
+  onViewDetails,
+  ingredients,
+  packagingItems,
+  settings,
+  onImport,
+  type,
+  onDuplicate,
+  onGeneratePurchaseOrder,
+}) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedCategory, setSelectedCategory] = useState<string>('all');
     const [recipeToDelete, setRecipeToDelete] = useState<Recipe | null>(null);
     const [dataToImport, setDataToImport] = useState<Recipe[] | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Modo de seleção para Ordem de Compra
+    const [isSelectionMode, setIsSelectionMode] = useState(false);
+    const [selectedRecipesMap, setSelectedRecipesMap] = useState<Record<string, number>>({});
+
 
     const categories = useMemo(() => {
         const cats = new Set<string>();
@@ -134,15 +154,74 @@ export const Recipes: React.FC<RecipesProps> = ({ recipes, onAddNew, onEdit, onD
         }
     };
 
-  const title = type === 'recipe' ? 'Minhas Receitas' : 'Meus Recheios';
-  const newButtonLabel = type === 'recipe' ? 'Nova Receita' : 'Novo Recheio';
+    const handleToggleRecipeSelection = (recipeId: string) => {
+      setSelectedRecipesMap(prev => {
+        const next = { ...prev };
+        if (next[recipeId] !== undefined) {
+          delete next[recipeId];
+        } else {
+          next[recipeId] = 1;
+        }
+        return next;
+      });
+    };
+
+    const handleBatchChange = (recipeId: string, batches: number) => {
+      setSelectedRecipesMap(prev => ({
+        ...prev,
+        [recipeId]: Math.max(0.1, batches),
+      }));
+    };
+
+    const handleTriggerGenerateOrder = () => {
+      if (!onGeneratePurchaseOrder) return;
+      const selections = Object.entries(selectedRecipesMap)
+        .map(([recipeId, batches]) => {
+          const recipe = recipes.find(r => r.id === recipeId);
+          if (!recipe) return null;
+          return { recipe, batches };
+        })
+        .filter((s): s is { recipe: Recipe; batches: number } => s !== null);
+
+      if (selections.length === 0) {
+        alert('Selecione pelo menos uma receita para gerar a ordem de compra.');
+        return;
+      }
+
+      onGeneratePurchaseOrder(selections);
+      setIsSelectionMode(false);
+      setSelectedRecipesMap({});
+    };
+
+    const selectedCount = Object.keys(selectedRecipesMap).length;
+    const totalBatchesCount = Object.values(selectedRecipesMap).reduce<number>((acc, count) => acc + Number(count || 0), 0);
+
+    const title = type === 'recipe' ? 'Minhas Receitas' : 'Meus Recheios';
+    const newButtonLabel = type === 'recipe' ? 'Nova Receita' : 'Novo Recheio';
 
   return (
     <>
-    <div className="space-y-8 animate-fade-in">
+    <div className="space-y-8 animate-fade-in relative pb-16">
         <div className="flex justify-between items-center flex-wrap gap-4">
             <h1 className="font-display text-4xl text-brand-text dark:text-rose-100">{title}</h1>
              <div className="flex items-center gap-2 flex-wrap">
+              {type === 'recipe' && onGeneratePurchaseOrder && (
+                <button
+                  onClick={() => {
+                    setIsSelectionMode(!isSelectionMode);
+                    if (isSelectionMode) setSelectedRecipesMap({});
+                  }}
+                  className={`flex items-center justify-center gap-2 font-bold py-2.5 px-4 rounded-xl shadow-sm text-sm transition-all ${
+                    isSelectionMode
+                      ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-md'
+                      : 'bg-rose-100 hover:bg-rose-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-brand-primary dark:text-rose-200'
+                  }`}
+                  title="Selecionar receitas e gerar lista de compras com cálculo de pacotes"
+                >
+                  <ClipboardListIcon className="w-5 h-5"/>
+                  <span>{isSelectionMode ? 'Sair da Seleção' : 'Gerar Ordem de Compra'}</span>
+                </button>
+              )}
               <button onClick={handleImportClick} className="flex items-center justify-center gap-2 bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105 text-sm">
                   <ArrowDownTrayIcon className="w-5 h-5"/>
                   <span>Importar</span>
@@ -157,6 +236,31 @@ export const Recipes: React.FC<RecipesProps> = ({ recipes, onAddNew, onEdit, onD
               </button>
             </div>
         </div>
+
+        {/* Banner de instrução do modo de seleção */}
+        {isSelectionMode && (
+          <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-700 p-4 rounded-2xl flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-3">
+              <ClipboardListIcon className="w-6 h-6 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+              <div>
+                <span className="font-bold text-sm text-amber-900 dark:text-amber-200 block">
+                  Modo de Seleção para Ordem de Compra Ativo
+                </span>
+                <span className="text-xs text-amber-700 dark:text-amber-300">
+                  Marque as receitas que vai produzir e ajuste a quantidade de fornadas. Os ingredientes serão consolidados e arredondados em pacotes comerciais inteiros.
+                </span>
+              </div>
+            </div>
+            {selectedCount > 0 && (
+              <button
+                onClick={handleTriggerGenerateOrder}
+                className="bg-brand-primary hover:bg-rose-700 text-white font-bold py-2 px-4 rounded-xl shadow-md text-sm transition"
+              >
+                Gerar Lista ({selectedCount})
+              </button>
+            )}
+          </div>
+        )}
 
         <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700">
             <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
@@ -188,9 +292,48 @@ export const Recipes: React.FC<RecipesProps> = ({ recipes, onAddNew, onEdit, onD
             </div>
             {filteredRecipes.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {filteredRecipes.map(recipe => (
-                        <div key={recipe.id} className="bg-rose-50 dark:bg-gray-700/50 rounded-2xl shadow-md border border-rose-200 dark:border-gray-600 flex flex-col justify-between overflow-hidden">
+                    {filteredRecipes.map(recipe => {
+                      const isSelected = selectedRecipesMap[recipe.id] !== undefined;
+                      const batchCount = selectedRecipesMap[recipe.id] || 1;
+
+                      return (
+                        <div
+                          key={recipe.id}
+                          className={`bg-rose-50 dark:bg-gray-700/50 rounded-2xl shadow-md border flex flex-col justify-between overflow-hidden transition-all ${
+                            isSelected
+                              ? 'border-brand-primary ring-2 ring-brand-primary/50 dark:border-rose-400 dark:ring-rose-400/40 bg-rose-100/40 dark:bg-gray-700'
+                              : 'border-rose-200 dark:border-gray-600'
+                          }`}
+                        >
                             <div className="p-5">
+                                {/* Barra de Seleção no topo do Card */}
+                                {isSelectionMode && (
+                                  <div className="flex items-center justify-between pb-3 mb-3 border-b border-rose-200/80 dark:border-gray-600 bg-white/60 dark:bg-gray-800/60 p-2.5 rounded-xl">
+                                    <label className="flex items-center gap-2 cursor-pointer font-bold text-xs text-brand-primary dark:text-rose-200">
+                                      <input
+                                        type="checkbox"
+                                        checked={isSelected}
+                                        onChange={() => handleToggleRecipeSelection(recipe.id)}
+                                        className="w-4 h-4 text-brand-primary rounded focus:ring-brand-primary cursor-pointer"
+                                      />
+                                      <span>{isSelected ? 'Incluída na lista' : 'Marcar para lista'}</span>
+                                    </label>
+                                    {isSelected && (
+                                      <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                                        <span className="text-[11px] font-semibold text-brand-light-text dark:text-gray-400">Fornadas:</span>
+                                        <input
+                                          type="number"
+                                          min="0.1"
+                                          step="0.5"
+                                          value={batchCount}
+                                          onChange={(e) => handleBatchChange(recipe.id, parseFloat(e.target.value) || 1)}
+                                          className="w-14 px-1.5 py-0.5 text-xs border border-rose-300 dark:border-gray-500 rounded bg-white dark:bg-gray-700 text-center font-bold"
+                                        />
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+
                                 <div className="flex justify-between items-start gap-2 mb-1">
                                     <h3 className="font-display text-xl text-brand-text dark:text-rose-100 truncate">{recipe.name}</h3>
                                     {recipe.category && (
@@ -256,7 +399,8 @@ export const Recipes: React.FC<RecipesProps> = ({ recipes, onAddNew, onEdit, onD
                                 </button>
                             </div>
                         </div>
-                    ))}
+                      );
+                    })}
                 </div>
             ) : (
                 <div className="text-center py-16">
@@ -269,6 +413,39 @@ export const Recipes: React.FC<RecipesProps> = ({ recipes, onAddNew, onEdit, onD
                 </div>
             )}
         </div>
+
+        {/* Barra Flutuante de Confirmação da Seleção */}
+        {isSelectionMode && selectedCount > 0 && (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-white dark:bg-gray-800 border-2 border-brand-primary dark:border-rose-400 shadow-2xl rounded-2xl px-5 py-3.5 flex items-center justify-between gap-4 max-w-lg w-[92%] animate-fade-in">
+            <div>
+              <span className="font-bold text-sm text-brand-text dark:text-rose-100 block">
+                {selectedCount} {selectedCount === 1 ? 'receita selecionada' : 'receitas selecionadas'}
+              </span>
+              <span className="text-xs text-brand-light-text dark:text-gray-400">
+                {totalBatchesCount} fornada(s) no total
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSelectionMode(false);
+                  setSelectedRecipesMap({});
+                }}
+                className="text-xs font-semibold px-3 py-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleTriggerGenerateOrder}
+                className="text-xs font-bold px-4 py-2 bg-brand-primary hover:bg-rose-700 text-white rounded-xl shadow-md transition whitespace-nowrap"
+              >
+                Gerar Lista de Compras
+              </button>
+            </div>
+          </div>
+        )}
     </div>
     <input type="file" ref={fileInputRef} onChange={handleFileChange} style={{ display: 'none' }} accept=".json" />
     <ConfirmModal

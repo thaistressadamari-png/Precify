@@ -145,7 +145,7 @@ export interface AppSettings {
   ingredientOutdatedDays: number;
 }
 
-export type Page = 'dashboard' | 'purchases' | 'ingredients' | 'packaging' | 'equipment' | 'recipes' | 'settings' | 'recipe-pricer' | 'recipe-details' | 'ingredient-form' | 'packaging-form' | 'equipment-form' | 'ingredient-details' | 'fillings' | 'filling-pricer' | 'filling-details' | 'support';
+export type Page = 'dashboard' | 'purchases' | 'shopping-list' | 'ingredients' | 'packaging' | 'equipment' | 'recipes' | 'settings' | 'recipe-pricer' | 'recipe-details' | 'ingredient-form' | 'packaging-form' | 'equipment-form' | 'ingredient-details' | 'fillings' | 'filling-pricer' | 'filling-details' | 'support';
 
 export interface InvoicePurchaseItem {
   id: string;
@@ -178,4 +178,40 @@ export interface InvoiceReceipt {
   notes?: string;
   createdAt: string;
 }
+
+export interface PurchaseOrderItem {
+  id: string;
+  ingredientId: string;
+  ingredientName: string;
+  supplier?: string;
+  totalRequiredAmount: number;
+  recipeUnit: Unit;
+  packageAmount: number;
+  packageUnit: Unit;
+  packagePrice: number;
+  packagesToBuy: number; // Arredondado para cima: Math.ceil(...)
+  estimatedCost: number;
+  checked: boolean;
+  notes?: string;
+}
+
+export interface PurchaseOrderRecipeRef {
+  recipeId: string;
+  recipeName: string;
+  batches: number; // Fornadas ou multiplicador
+  yieldAmount: number;
+  yieldUnit: string;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  name: string;
+  createdAt: string;
+  status: 'pending' | 'in_progress' | 'completed';
+  recipes: PurchaseOrderRecipeRef[];
+  items: PurchaseOrderItem[];
+  totalEstimatedCost: number;
+  notes?: string;
+}
+
 

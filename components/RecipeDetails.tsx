@@ -7,6 +7,7 @@ import { calculateCosts, convertToBaseUnitAmount } from './costCalculator';
 import { formatCurrency } from './utils';
 import { DocumentArrowDownIcon } from './icons/DocumentArrowDownIcon';
 import { ConfirmModal } from './ConfirmModal';
+import { ClipboardListIcon } from './icons/ClipboardListIcon';
 
 declare global {
   interface Window {
@@ -23,6 +24,7 @@ interface RecipeDetailsProps {
   onDelete: (recipeId: string) => void;
   onClose: () => void;
   type: 'recipe' | 'filling';
+  onGeneratePurchaseOrder?: (recipe: Recipe) => void;
 }
 
 const PieChart: React.FC<{ data: { name: string; value: number; color: string }[] }> = ({ data }) => {
@@ -74,7 +76,7 @@ const PieChart: React.FC<{ data: { name: string; value: number; color: string }[
   );
 };
 
-export const RecipeDetails: React.FC<RecipeDetailsProps> = ({ recipe, ingredients, packagingItems, settings, onEdit, onDelete, onClose, type }) => {
+export const RecipeDetails: React.FC<RecipeDetailsProps> = ({ recipe, ingredients, packagingItems, settings, onEdit, onDelete, onClose, type, onGeneratePurchaseOrder }) => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const costBreakdown = useMemo(() => {
@@ -298,6 +300,15 @@ export const RecipeDetails: React.FC<RecipeDetailsProps> = ({ recipe, ingredient
           <button onClick={handleGeneratePdf} className="flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105">
             <DocumentArrowDownIcon className="w-5 h-5"/> Gerar PDF
           </button>
+          {onGeneratePurchaseOrder && type === 'recipe' && (
+            <button
+              onClick={() => onGeneratePurchaseOrder(recipe)}
+              className="flex items-center gap-2 bg-rose-600 hover:bg-rose-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105"
+              title="Gerar lista de compras para esta receita"
+            >
+              <ClipboardListIcon className="w-5 h-5"/> Lista de Compras
+            </button>
+          )}
           <button onClick={() => setShowDeleteConfirm(true)} className="flex items-center gap-2 bg-brand-primary hover:bg-rose-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105">
             <TrashIcon className="w-5 h-5"/> Excluir
           </button>

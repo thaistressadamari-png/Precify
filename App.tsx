@@ -1,10 +1,11 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import type { Ingredient, Packaging, Equipment, Recipe, AppSettings, Page, Unit, User, GlobalConfig, InvoiceReceipt } from './types';
+import type { Ingredient, Packaging, Equipment, Recipe, AppSettings, Page, Unit, User, GlobalConfig, InvoiceReceipt, PurchaseOrder } from './types';
 import { IngredientManager } from './components/IngredientManager';
 import { PackagingManager } from './components/PackagingManager';
 import { EquipmentManager } from './components/EquipmentManager';
 import { PurchasesManager } from './components/PurchasesManager';
+import { ShoppingListManager } from './components/ShoppingListManager';
 import { Settings } from './components/Settings';
 import { Dashboard } from './components/Dashboard';
 import { Recipes } from './components/Recipes';
@@ -21,6 +22,7 @@ import { MoonIcon } from './components/icons/MoonIcon';
 import { ChartBarIcon } from './components/icons/ChartBarIcon';
 import { ReceiptIcon } from './components/icons/ReceiptIcon';
 import { ShoppingBagIcon } from './components/icons/ShoppingBagIcon';
+import { ClipboardListIcon } from './components/icons/ClipboardListIcon';
 import { BoxIcon } from './components/icons/BoxIcon';
 import { EquipmentIcon } from './components/icons/EquipmentIcon';
 import { BookOpenIcon } from './components/icons/BookOpenIcon';
@@ -28,6 +30,7 @@ import { AdjustmentsHorizontalIcon } from './components/icons/AdjustmentsHorizon
 import { QuestionMarkCircleIcon } from './components/icons/QuestionMarkCircleIcon';
 import { FireIcon } from './components/icons/FireIcon';
 import { calculateCosts } from './components/costCalculator';
+import { generatePurchaseOrder } from './components/shoppingCalculator';
 import { LoginPage } from './components/LoginPage';
 import { LandingPage } from './components/LandingPage';
 import { ArrowRightOnRectangleIcon } from './components/icons/ArrowRightOnRectangleIcon';
@@ -83,6 +86,8 @@ const App: React.FC = () => {
   const [fillings, setFillings] = useState<Recipe[]>([]);
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
   const [receipts, setReceipts] = useState<InvoiceReceipt[]>([]);
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
+  const [activeShoppingOrderId, setActiveShoppingOrderId] = useState<string | null>(null);
   
   const [view, setView] = useState<'landing' | 'login' | 'register'>('landing');
   
@@ -197,6 +202,7 @@ const App: React.FC = () => {
         setFillings([]);
         setSettings(defaultSettings);
         setReceipts([]);
+        setPurchaseOrders([]);
         initialLoadComplete.current = false;
         setDataLoading(false);
         return;
@@ -216,6 +222,7 @@ const App: React.FC = () => {
                 setFillings(data.fillings || []);
                 setSettings(data.settings || defaultSettings);
                 setReceipts(data.receipts || []);
+                setPurchaseOrders(data.purchaseOrders || []);
             }
             initialLoadComplete.current = true;
         } catch (error) {
@@ -260,11 +267,11 @@ const App: React.FC = () => {
   useEffect(() => {
     const handler = setTimeout(() => {
         if (userId && initialLoadComplete.current) {
-            saveData({ ingredients, packaging, equipment, recipes, fillings, settings, receipts });
+            saveData({ ingredients, packaging, equipment, recipes, fillings, settings, receipts, purchaseOrders });
         }
     }, 1500);
     return () => clearTimeout(handler);
-  }, [ingredients, packaging, equipment, recipes, fillings, settings, receipts, userId, saveData]);
+  }, [ingredients, packaging, equipment, recipes, fillings, settings, receipts, purchaseOrders, userId, saveData]);
   
   const ingredientsWithFillings = useMemo(() => {
     const fillingsAsIngredients: Ingredient[] = fillings
@@ -466,6 +473,28 @@ const App: React.FC = () => {
     } catch (error) { console.error(error); }
   };
 
+  const handleSavePurchaseOrder = (order: PurchaseOrder) => {
+    setPurchaseOrders(prev => {
+      const exists = prev.some(o => o.id === order.id);
+      if (exists) return prev.map(o => o.id === order.id ? order : o);
+      return [order, ...prev];
+    });
+  };
+
+  const handleDeletePurchaseOrder = (orderId: string) => {
+    setPurchaseOrders(prev => prev.filter(o => o.id !== orderId));
+    if (activeShoppingOrderId === orderId) {
+      setActiveShoppingOrderId(null);
+    }
+  };
+
+  const handleGeneratePurchaseOrderFromRecipes = (selections: { recipe: Recipe; batches: number }[]) => {
+    const newOrder = generatePurchaseOrder(selections, ingredients, fillings);
+    handleSavePurchaseOrder(newOrder);
+    setActiveShoppingOrderId(newOrder.id);
+    setPage('shopping-list');
+  };
+
   const renderPage = () => {
     switch (page) {
       case 'dashboard':
@@ -482,6 +511,20 @@ const App: React.FC = () => {
             onBatchUpdateCatalog={handleBatchUpdateCatalog}
           />
         );
+      case 'shopping-list':
+        return (
+          <ShoppingListManager
+            purchaseOrders={purchaseOrders}
+            recipes={recipes}
+            ingredients={ingredients}
+            fillings={fillings}
+            onSaveOrder={handleSavePurchaseOrder}
+            onDeleteOrder={handleDeletePurchaseOrder}
+            onNavigateToRecipes={() => setPage('recipes')}
+            selectedOrderId={activeShoppingOrderId}
+            onSelectOrder={setActiveShoppingOrderId}
+          />
+        );
       case 'ingredients':
         return <IngredientManager ingredients={ingredients} onAddNew={handleAddNewIngredient} onEdit={handleEditIngredient} onDelete={handleDeleteIngredient} onViewDetails={handleViewIngredientDetails} onImport={setIngredients} highlightedId={highlightedIngredientId} onHighlightComplete={() => setHighlightedIngredientId(null)} onDuplicate={(i) => handleSaveIngredient({...i, id: Date.now().toString(), name: i.name + ' (Cópia)'})} />;
       case 'packaging':
@@ -489,7 +532,22 @@ const App: React.FC = () => {
       case 'equipment':
         return <EquipmentManager equipment={equipment} onAddNew={handleAddNewEquipment} onEdit={handleEditEquipment} onDelete={handleDeleteEquipment} onImport={setEquipment} onDuplicate={(e) => handleSaveEquipment({...e, id: Date.now().toString(), name: e.name + ' (Cópia)'})} />;
       case 'recipes':
-        return <Recipes recipes={recipes} type="recipe" onAddNew={handleAddNewRecipe} onEdit={handleEditRecipe} onDelete={handleDeleteRecipe} onViewDetails={handleViewRecipeDetails} ingredients={ingredientsWithFillings} packagingItems={packaging} settings={settings} onImport={setRecipes} onDuplicate={(r) => handleSaveRecipe({...r, id: Date.now().toString(), name: r.name + ' (Cópia)'})} />;
+        return (
+          <Recipes
+            recipes={recipes}
+            type="recipe"
+            onAddNew={handleAddNewRecipe}
+            onEdit={handleEditRecipe}
+            onDelete={handleDeleteRecipe}
+            onViewDetails={handleViewRecipeDetails}
+            ingredients={ingredientsWithFillings}
+            packagingItems={packaging}
+            settings={settings}
+            onImport={setRecipes}
+            onDuplicate={(r) => handleSaveRecipe({...r, id: Date.now().toString(), name: r.name + ' (Cópia)'})}
+            onGeneratePurchaseOrder={handleGeneratePurchaseOrderFromRecipes}
+          />
+        );
       case 'fillings':
         return <Recipes recipes={fillings} type="filling" onAddNew={handleAddNewFilling} onEdit={handleEditFilling} onDelete={handleDeleteFilling} onViewDetails={handleViewFillingDetails} ingredients={ingredients} packagingItems={packaging} settings={settings} onImport={setFillings} onDuplicate={(f) => handleSaveFilling({...f, id: Date.now().toString(), name: f.name + ' (Cópia)'})} />;
       case 'settings':
@@ -499,7 +557,7 @@ const App: React.FC = () => {
       case 'recipe-pricer':
         return <RecipePricer ingredients={ingredientsWithFillings} packagingItems={packaging} settings={settings} type="recipe" onSave={handleSaveRecipe} onCancel={() => setPage('recipes')} recipeToEdit={recipeToEdit} />;
       case 'recipe-details':
-        return recipeToView ? <RecipeDetails recipe={recipeToView} type="recipe" ingredients={ingredientsWithFillings} packagingItems={packaging} settings={settings} onEdit={handleEditRecipe} onDelete={handleDeleteRecipe} onClose={() => setPage('recipes')} /> : null;
+        return recipeToView ? <RecipeDetails recipe={recipeToView} type="recipe" ingredients={ingredientsWithFillings} packagingItems={packaging} settings={settings} onEdit={handleEditRecipe} onDelete={handleDeleteRecipe} onClose={() => setPage('recipes')} onGeneratePurchaseOrder={(r) => handleGeneratePurchaseOrderFromRecipes([{ recipe: r, batches: 1 }])} /> : null;
       case 'filling-pricer':
         return <RecipePricer ingredients={ingredients} packagingItems={packaging} settings={settings} type="filling" onSave={handleSaveFilling} onCancel={() => setPage('fillings')} recipeToEdit={fillingToEdit} />;
       case 'filling-details':
@@ -593,6 +651,7 @@ const App: React.FC = () => {
             <nav className="flex lg:flex-col overflow-x-auto no-scrollbar gap-1.5 sm:gap-2 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-2 rounded-2xl shadow-lg border border-rose-100 dark:border-gray-700">
               <NavItem label="Dashboard" targetPage="dashboard" icon={ChartBarIcon} />
               <NavItem label="Compras & Notas" targetPage="purchases" icon={ReceiptIcon} />
+              <NavItem label="Lista de Compras" targetPage="shopping-list" icon={ClipboardListIcon} />
               <NavItem label="Ingredientes" targetPage="ingredients" icon={ShoppingBagIcon} />
               <NavItem label="Embalagens" targetPage="packaging" icon={BoxIcon} />
               <NavItem label="Equipamentos" targetPage="equipment" icon={EquipmentIcon} />
